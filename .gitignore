@@ -16,6 +16,7 @@ Thumbs.db
 
 # Claude
 .claude/cache/
+.claude/settings.local.json
 
 # Node
 node_modules/
