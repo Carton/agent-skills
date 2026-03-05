@@ -76,44 +76,6 @@ Epic Games library management CLI tool. Browse, install, launch, sync saves, and
 
 **Documentation:** See [skills/epic-cli/SKILL.md](skills/epic-cli/SKILL.md) for detailed usage.
 
-## Contributing
-
-Contributions are welcome! Here's how you can add new skills:
-
-### Skill Structure
-
-Each skill should follow this structure:
-
-```
-skills/
-└── your-skill/
-    └── SKILL.md
-```
-
-### SKILL.md Format
-
-Each `SKILL.md` file must start with frontmatter:
-
-```markdown
----
-name: your-skill
-description: A clear, concise description of when to use this skill
----
-
-# Your Skill Name
-
-Detailed documentation here...
-```
-
-### Adding Your Skill
-
-1. Create a new directory in `skills/`
-2. Add your `SKILL.md` file
-3. Update `.claude-plugin/marketplace.json` to include your skill
-4. Submit a pull request
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed guidelines.
-
 ## Development
 
 ### Local Testing

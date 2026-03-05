@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Initial repository setup
 - `epic-cli` skill for Epic Games library management
-- Repository documentation (README, CONTRIBUTING, LICENSE)
+- Repository documentation (README, LICENSE)
 - GitHub Actions workflow for skill validation
 - `.claude-plugin/marketplace.json` for plugin marketplace support
 
