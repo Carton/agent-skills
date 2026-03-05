@@ -1,0 +1,177 @@
+name: Validate Skills
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Check required files
+        run: |
+          echo "Checking for required files..."
+
+          # Check if skills directory exists
+          if [ ! -d "skills" ]; then
+            echo "❌ Error: skills/ directory not found"
+            exit 1
+          fi
+          echo "✅ skills/ directory exists"
+
+          # Check if marketplace.json exists
+          if [ ! -f ".claude-plugin/marketplace.json" ]; then
+            echo "⚠️  Warning: .claude-plugin/marketplace.json not found"
+          else
+            echo "✅ .claude-plugin/marketplace.json exists"
+
+            # Validate JSON syntax
+            if python3 -m json.tool .claude-plugin/marketplace.json > /dev/null 2>&1; then
+              echo "✅ marketplace.json is valid JSON"
+            else
+              echo "❌ Error: marketplace.json has invalid JSON syntax"
+              exit 1
+            fi
+          fi
+
+      - name: Validate SKILL.md files
+        run: |
+          echo "Validating SKILL.md files..."
+
+          # Find all SKILL.md files
+          skill_files=$(find skills -name "SKILL.md" -type f)
+
+          if [ -z "$skill_files" ]; then
+            echo "❌ Error: No SKILL.md files found in skills/"
+            exit 1
+          fi
+
+          echo "Found $(echo "$skill_files" | wc -l) SKILL.md files"
+          echo ""
+
+          # Create validation script
+          cat > /tmp/validate.py << 'EOF'
+          import sys
+          import re
+          from pathlib import Path
+
+          def validate_skill_file(filepath):
+              """Validate a SKILL.md file"""
+              errors = []
+              warnings = []
+
+              with open(filepath, 'r', encoding='utf-8') as f:
+                  content = f.read()
+
+              # Check for frontmatter
+              if not content.startswith('---'):
+                  errors.append("Missing frontmatter (must start with ---)")
+              else:
+                  # Extract frontmatter
+                  frontmatter_match = re.search(r'^---$(.*?)^---$', content, re.MULTILINE | re.DOTALL)
+                  if not frontmatter_match:
+                      errors.append("Invalid frontmatter format")
+                  else:
+                      frontmatter = frontmatter_match.group(1)
+
+                      # Check required fields
+                      if 'name:' not in frontmatter:
+                          errors.append("Missing required field: name")
+
+                      if 'description:' not in frontmatter:
+                          errors.append("Missing required field: description")
+                      else:
+                          # Extract description
+                          desc_match = re.search(r'description:\s*(.+)', frontmatter)
+                          if desc_match:
+                              desc = desc_match.group(1).strip()
+                              # Remove quotes if present
+                              desc = desc.strip('"\'')
+                              if len(desc) > 200:
+                                  warnings.append(f"Description is long ({len(desc)} chars), consider shortening")
+
+              # Check for main heading
+              if '#' not in content.split('---')[2] if len(content.split('---')) > 2 else '':
+                  warnings.append("No main heading (#) found")
+
+              return errors, warnings
+
+          # Main validation
+          all_valid = True
+          for skill_file in Path('skills').rglob('SKILL.md'):
+              print(f"📄 Validating {skill_file.relative_to(Path.cwd())}")
+
+              errors, warnings = validate_skill_file(skill_file)
+
+              if errors:
+                  print(f"  ❌ Errors:")
+                  for error in errors:
+                      print(f"     - {error}")
+                  all_valid = False
+
+              if warnings:
+                  print(f"  ⚠️  Warnings:")
+                  for warning in warnings:
+                      print(f"     - {warning}")
+
+              if not errors and not warnings:
+                  print(f"  ✅ Valid")
+              print()
+
+          sys.exit(0 if all_valid else 1)
+          EOF
+
+          python3 /tmp/validate.py
+
+          echo "✅ All SKILL.md files are valid"
+
+      - name: Check skill consistency
+        run: |
+          echo "Checking skill consistency..."
+
+          # Check if all skills in marketplace.json exist
+          if [ -f ".claude-plugin/marketplace.json" ]; then
+            python3 << 'EOF'
+            import json
+            from pathlib import Path
+
+            with open('.claude-plugin/marketplace.json', 'r') as f:
+                marketplace = json.load(f)
+
+            all_valid = True
+            for plugin in marketplace.get('plugins', []):
+                for skill_path in plugin.get('skills', []):
+                    skill_md = Path(skill_path) / 'SKILL.md'
+                    if not skill_md.exists():
+                        print(f"❌ Error: Skill {skill_md} referenced in marketplace.json but SKILL.md not found")
+                        all_valid = False
+
+            if all_valid:
+                print("✅ All skills in marketplace.json exist")
+
+            exit(0 if all_valid else 1)
+            EOF
+          fi
+
+          echo "✅ Consistency check passed"
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "## Validation Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "✅ All validation checks passed!" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Statistics" >> $GITHUB_STEP_SUMMARY
+          echo "- SKILL.md files: $(find skills -name 'SKILL.md' | wc -l)" >> $GITHUB_STEP_SUMMARY
+          echo "- Skills validated successfully" >> $GITHUB_STEP_SUMMARY

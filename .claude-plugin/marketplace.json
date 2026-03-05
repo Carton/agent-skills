@@ -1,0 +1,22 @@
+{
+  "name": "agent-skills",
+  "owner": {
+    "name": "Carton He",
+    "email": "cartonhe@gmail.com"
+  },
+  "metadata": {
+    "description": "A collection of useful agent skills for AI-powered development tools",
+    "version": "0.1.0"
+  },
+  "plugins": [
+    {
+      "name": "gaming-tools",
+      "description": "Gaming platform and library management tools",
+      "source": "./",
+      "strict": false,
+      "skills": [
+        "./skills/epic-cli"
+      ]
+    }
+  ]
+}
