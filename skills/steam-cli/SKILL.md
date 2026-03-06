@@ -1,190 +1,243 @@
 ---
 name: steam-cli
-description: Steam game library management CLI tool. Use when user wants to browse, filter, search, or manage their Steam game library from the terminal - finding unplayed games, checking playtime, filtering by reviews, or discovering hidden gems. Also covers Steam Deck playtime tracking and user profile statistics.
+description: Steam game library management CLI tools. Use when user wants to manage their Steam library (browse, filter, search, find unplayed games, check playtime) or query Steam store game information (search games, get detailed info, check prices). Covers both user library management (steam-games-cli) and store game queries (steam-game-query).
 ---
 
-# Steam CLI
+# Steam CLI Tools
 
-Steam CLI (`steam-games-cli`) is a command-line tool for browsing, filtering, and discovering games in a Steam library. Use this skill when the user wants to find hidden gems, track playtime, manage their Steam collection, or get game statistics from the terminal.
+This skill provides guidance for two complementary Steam CLI tools:
+
+1. **steam-games-cli** - Manage your personal Steam game library
+2. **steam-game-query** - Query Steam store game information (no login required)
+
+## When to Use Each Tool
+
+### Use steam-games-cli when:
+- Browsing your own game library
+- Finding unplayed games in your collection
+- Checking playtime statistics
+- Filtering games by review scores
+- Managing Steam Deck playtime tracking
+- Getting user profile statistics
+
+### Use steam-game-query when:
+- Searching for games on the Steam store
+- Getting detailed game information (price, release date, developer, etc.)
+- Checking regional pricing
+- Querying game details without Steam login
+- Batch querying multiple games
+- Researching games before purchase
+
+## Quick Reference
+
+### steam-games-cli (User Library)
+
+Requires: Node.js 18+, Steam Web API key, public Steam profile
+
+```bash
+# Installation
+npm install -g steam-games-cli
+
+# Setup
+steam config set-key YOUR_API_KEY
+steam config set-user YOUR_STEAM_ID
+
+# Common commands
+steam whoami                    # Show profile stats
+steam library                   # List all games
+steam library --unplayed        # Find unplayed games
+steam library --sort playtime   # Most played games
+```
+
+### steam-game-query (Store Queries)
+
+Requires: Python 3.10+, no login/API key needed
+
+```bash
+# Installation
+pip install steam-game-query
+
+# Common commands
+steam-query search "Elden Ring"              # Search games
+steam-query lookup 1245620                   # Get game details by App ID
+steam-query lookup -q "Hollow Knight"        # Search and lookup by name
+steam-query batch "Game1" "Game2" -o out.json  # Batch query
+```
+
+## Decision Guide
+
+| Task | Tool |
+|------|------|
+| "Show my games" | steam-games-cli |
+| "Find unplayed games in my library" | steam-games-cli |
+| "Search Steam store for games" | steam-game-query |
+| "Check price of a game" | steam-game-query |
+| "Get my playtime stats" | steam-games-cli |
+| "Get game details (developer, genres, etc.)" | steam-game-query |
+| "Filter my library by reviews" | steam-games-cli |
+| "Compare regional pricing" | steam-game-query |
+
+## Common Workflows
+
+### Workflow 1: Research and Purchase Decision
+
+Use steam-game-query to research games before purchasing:
+
+```bash
+# Search for games
+steam-query search "action RPG" -l 20
+
+# Get detailed info
+steam-query lookup -q "Elden Ring"
+
+# Check pricing in different regions
+steam-query lookup 1245620 --country US --json | jq '.price'
+steam-query lookup 1245620 --country CN --json | jq '.price'
+```
+
+### Workflow 2: Manage Your Library
+
+Use steam-games-cli to manage your existing games:
+
+```bash
+# Find hidden gems (well-reviewed, unplayed games)
+steam library --unplayed --min-reviews 8 --show-reviews
+
+# Check Steam Deck playtime
+steam library --deck --sort deck
+
+# See your profile stats
+steam whoami
+```
+
+### Workflow 3: Batch Export Your Library
+
+```bash
+# Export your library as JSON
+steam library --json > my_library.json
+
+# Find games you might want to replay
+steam library --min-hours 2 --max-hours 20 --show-reviews
+```
+
+### Workflow 4: Compare Store vs Your Library
+
+```bash
+# Check if you own a game
+steam library | grep "Game Name"
+
+# Get store info for a game
+steam-query lookup -q "Game Name"
+
+# Batch check multiple games from other platforms
+steam-query batch -i epic_games.txt -o steam_equivalent.json
+```
 
 ## Installation
 
-Prerequisites:
-- Node.js 18+
-- Steam Web API key (get one at https://steamcommunity.com/dev/apikey)
+### steam-games-cli
 
-Install globally:
 ```bash
 npm install -g steam-games-cli
+
+# Get API key: https://steamcommunity.com/dev/apikey
+steam config set-key YOUR_API_KEY
+steam config set-user YOUR_STEAM_ID
+
+# Set profile to Public: https://steamcommunity.com/my/edit/settings
 ```
 
-## Initial Setup
+### steam-game-query
 
-Before using the tool, configure the API key and Steam user:
+```bash
+pip install steam-game-query
+
+# No setup required - works immediately
+```
+
+## Configuration
+
+### steam-games-cli
+
+Config stored in `~/.steam-cli/config.json` or via environment variables:
 
 ```bash
 steam config set-key YOUR_API_KEY
 steam config set-user YOUR_STEAM_ID
 ```
 
-The Steam ID can be found in the URL of the user's Steam profile (e.g., `76561198012345678`).
+### steam-game-query
 
-Config is stored in `~/.steam-cli/config.json` or via `STEAM_API_KEY` environment variable.
-
-## Privacy Requirement
-
-The Steam profile's "Game details" must be set to Public:
-- Visit: https://steamcommunity.com/my/edit/settings
-- Privacy Settings → Game details → Public
-
-## Commands Overview
-
-| Command | Description |
-|---------|-------------|
-| `steam whoami` | Show current user profile and stats |
-| `steam library` | Browse and filter game library |
-| `steam tags` | List all Steam tags (instant) |
-| `steam genres` | List all Steam genres (instant) |
-| `steam config` | Manage configuration |
-
-## Common Use Cases
-
-### Profile Information
+Optional country/region configuration:
 
 ```bash
-# Show Steam profile and library stats
-steam whoami
+# CLI parameter
+steam-query lookup 1245620 --country US
 
-# JSON output for scripting
-steam whoami --json
+# Environment variable
+export STEAM_QUERY_COUNTRY=JP
+
+# Config file
+mkdir -p ~/.steam-query
+echo '[steam-query]' > ~/.steam-query/config.toml
+echo 'country = "US"' >> ~/.steam-query/config.toml
 ```
 
-### Basic Library Browsing
+## Getting Detailed Help
 
-```bash
-# List all games
-steam library
+For comprehensive command reference and advanced usage:
 
-# Show top 10 most-played games
-steam library --sort playtime --limit 10
-
-# Find unplayed games (hidden gems)
-steam library --unplayed --limit 20
-
-# Games with 10-50 hours of playtime
-steam library --min-hours 10 --max-hours 50
-```
-
-### Review-Based Filtering
-
-Review categories (score 1-9 scale):
-- `overwhelmingly-positive` (9)
-- `very-positive` (8)
-- `positive` (7)
-- `mostly-positive` (6)
-- `mixed` (5)
-- `mostly-negative` (4)
-- `negative` (3)
-- `very-negative` (2)
-- `overwhelmingly-negative` (1)
-
-```bash
-# Show only Very Positive games
-steam library --reviews very-positive --limit 10
-
-# Show Overwhelmingly Positive with reviews column
-steam library --reviews overwhelmingly-positive --show-reviews
-
-# Filter by review score (1-9 scale)
-steam library --min-reviews 7 --show-reviews --limit 10
-
-# Sort by review score (best first)
-steam library --sort reviews --show-reviews --limit 10
-
-# Combine: well-reviewed games you haven't played much
-steam library --max-hours 5 --min-reviews 8 --show-reviews
-```
-
-### Steam Deck Commands
-
-```bash
-# Show only games played on Steam Deck
-steam library --deck --limit 10
-
-# Sort by most-played on Deck
-steam library --deck --sort deck
-
-# Show Deck playtime column
-steam library --deck-hours --limit 5
-```
-
-### Output Formats
-
-```bash
-# Table format (default)
-steam library --limit 5
-
-# Plain list (great for scripting)
-steam library --plain --limit 5
-
-# JSON output
-steam library --json --limit 5
-```
-
-## Command Reference
-
-### `steam library [options]`
-
-| Option | Description |
-|--------|-------------|
-| `-l, --limit <n>` | Limit number of results |
-| `--unplayed` | Show only unplayed games |
-| `--min-hours <h>` | Minimum playtime in hours |
-| `--max-hours <h>` | Maximum playtime in hours |
-| `--deck` | Only games played on Steam Deck |
-| `--deck-hours` | Show Deck playtime column |
-| `--reviews <cat>` | Filter by review category |
-| `--min-reviews <n>` | Minimum review score (1-9) |
-| `--max-reviews <n>` | Maximum review score (1-9) |
-| `--show-reviews` | Show review column |
-| `--sort <field>` | Sort by: name, playtime, deck, reviews |
-| `--plain` | Plain list output |
-| `--json` | JSON output |
-
-### `steam config <command>`
-
-| Command | Description |
-|----------|-------------|
-| `set-key <key>` | Set Steam Web API key |
-| `set-user <id>` | Set Steam ID or username |
-| `show` | Display current config |
-
-## Performance Tips
-
-Review data requires individual API calls per game. For better performance:
-
-```bash
-# Fast: filters first, then fetches reviews for fewer games
-steam library --min-hours 10 --reviews very-positive
-
-# Slow: fetches reviews for all games
-steam library --reviews very-positive
-```
-
-Apply other filters (playtime, unplayed, deck) before using review filters to reduce the number of API calls needed.
+- **steam-games-cli**: See `references/steam-games-cli-guide.md`
+- **steam-game-query**: See `references/steam-game-query-guide.md`
 
 ## Troubleshooting
 
-### Empty game list
-- Ensure Steam profile's "Game details" is set to Public
-- Verify API key is correctly configured with `steam config show`
+### steam-games-cli Issues
 
-### Review fetching is slow
-- Use other filters first to reduce the number of games before fetching reviews
+**Empty game list:**
+- Ensure Steam profile "Game details" is set to Public
+- Verify API key: `steam config show`
+
+**Slow review fetching:**
+- Apply other filters first to reduce API calls
+- Use `--min-reviews` instead of `--reviews` when possible
+
+### steam-game-query Issues
+
+**Game not found:**
+- Check game name spelling
+- Try partial keywords
+- Confirm game exists on Steam store
+
+**Network errors:**
+- Check network connection
+- Reduce request rate: `--rate-limit 0.5`
+- Steam API might be temporarily unavailable
 
 ## Resources
 
-For more detailed command examples and advanced usage, see:
-- GitHub repository: https://github.com/mjrussell/steam-cli
-- Author: Matt Russell
-- License: MIT
+- **steam-games-cli**: https://github.com/mjrussell/steam-cli (Author: Matt Russell, License: MIT)
+- **steam-game-query**: https://github.com/carton/steam-query (Author: Carton He, License: MIT)
+
+## Quick Command Reference
+
+### steam-games-cli
+
+| Command | Description |
+|---------|-------------|
+| `steam whoami` | Show user profile and stats |
+| `steam library` | Browse and filter game library |
+| `steam library --unplayed` | Find unplayed games |
+| `steam library --sort playtime` | Sort by playtime |
+| `steam library --reviews very-positive` | Filter by reviews |
+| `steam config` | Manage configuration |
+
+### steam-game-query
+
+| Command | Description |
+|---------|-------------|
+| `steam-query search "query"` | Search Steam store |
+| `steam-query lookup <app_id>` | Get game details by ID |
+| `steam-query lookup -q "name"` | Search and lookup by name |
+| `steam-query batch games... -o out.json` | Query multiple games |
+| `steam-query lookup <id> --country US` | Query with regional pricing |
