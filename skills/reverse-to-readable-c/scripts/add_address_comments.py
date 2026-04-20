@@ -8,7 +8,7 @@ from pathlib import Path
 
 
 FUNCTION_RE = re.compile(
-    r"^(?!#include)(?!typedef)(?!struct\b)(?!enum\b)(?!//)([A-Za-z_][\w\s\*]*\([^;]*\))\s*$",
+    r"^(?!#include)(?!typedef)(?!struct\b)(?!enum\b)(?!//)([A-Za-z_.][\w.\s\*]*\([^;]*\))\s*\{?\s*$",
     re.MULTILINE,
 )
 

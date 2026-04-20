@@ -186,25 +186,57 @@ rm -f /tmp/test_r2.c /tmp/test_r2
 
 Goal: identify the binary shape, main entry chain, probable modules, and the first 20-50 functions worth tracking.
 
-Use radare2 for discovery first. Typical actions:
+### Binary Identification
+
+Start with basic file info and string survey:
 
 ```bash
-r2 -A ./target_binary
-afl
-izz
-axt @@ sym.*
+file ./target_binary
+strings ./target_binary | grep -iE "(usage|error|main|version|help|\.pdb|\.cpp)" | head -30
 ```
+
+Check for debug build indicators:
+
+- Stack cookie pattern: `0xcccccccc` fill values in decompiled output
+- PDB path strings: `D:\...\xxx.pdb`
+- Mangled C++ symbols with debug info (e.g. `MSVCP140D.dll`, `ucrtbased.dll`)
+- Source file path strings in `.rdata`
+
+### radare2 Discovery
+
+Always use `aaa` (analyze all) and enable relocs for proper analysis:
+
+```bash
+r2 -q -e bin.relocs.apply=true -c "aaa; afl" ./target_binary
+```
+
+> **Note**: Use `aaa` (lowercase), not `-A` (uppercase). `-A` only runs a subset of analysis and may miss functions and cross-references. Always use `-e bin.relocs.apply=true` for PE binaries to resolve imports correctly.
 
 Useful r2 queries:
 
 - `afl` to list discovered functions
 - `afll` or `aflj` for sortable inventories
 - `izz` / `izj` for strings
-- `axt` for cross-references from important strings
+- `axt @ <string_addr>` for cross-references from important strings
 - `pdf @ addr` for assembly review
 - `agf @ addr` or `agfj @ addr` for local graph shape
+- `ii` / `iij` for imported functions
 
-What to produce in phase 1:
+### Finding the Main Function
+
+If no symbol table is available, find `main` via string cross-references:
+
+```bash
+# In r2 shell:
+aaa
+# Find usage/help strings
+iz~Usage
+iz~help
+# Cross-reference to find which function uses them
+axt @ <string_addr>
+```
+
+### What to Produce
 
 - an entry-chain note
 - a first-pass module map
@@ -221,10 +253,42 @@ Goal: export initial C-like code for only the functions needed for the current m
 Prefer `r2ghidra` through radare2 when available:
 
 ```bash
-r2 -A ./target_binary
-pdg @ 0x14000e430
-pdg @ 0x140015170
+# Open binary once with full analysis
+r2 -q -e bin.relocs.apply=true -c "aaa; pdg @ fcn.1400010a0" ./target_binary
 ```
+
+> **Note**: Use `aaa` (lowercase), not `-A`. See Phase 1 for details.
+
+### Handling ANSI Color Codes
+
+`pdg` output contains ANSI escape codes by default. Strip them when saving to files:
+
+```bash
+# Method 1: use r2 -- option (disables colors)
+r2 -- -q -e bin.relocs.apply=true -c "aaa; pdg @ fcn.1400010a0" ./target_binary > phase2/func_0x1400010a0.c
+
+# Method 2: pipe through sed
+r2 -q -e bin.relocs.apply=true -c "aaa; pdg @ fcn.1400010a0" ./target_binary | sed 's/\x1b\[[0-9;]*m//g' > phase2/func_0x1400010a0.c
+```
+
+### C++ Binary Noise
+
+C++ binaries (especially MSVC debug builds) produce very large decompiled output due to:
+
+- STL container inline expansion (`std::string`, `std::vector`, `std::filesystem::path`)
+- Exception handling frames (`__CxxFrameHandler4`, cookie checks)
+- Debug stack initialization (`0xcccccccc` fill loops)
+- Template instantiation noise
+
+For C++ targets, consider:
+
+1. **Identify runtime vs business logic**: Mark functions that only call `MSVCP140D.dll` / `ucrtbased.dll` as runtime helpers early.
+2. **Focus on call-graph roots**: Start from functions that reference application strings, not from every function.
+3. **Batch-export selectively**: Only decompile functions that are 1-2 calls away from a business-critical root.
+
+See [C++ Binary Handling](#c-binary-handling) for detailed strategies.
+
+### File Organization
 
 Useful patterns:
 
@@ -245,7 +309,19 @@ Export order:
 
 Goal: convert an address bag into a module map.
 
-Group functions by real behavior, not by decompiler order.
+### Small Binary Fast-Track
+
+For simple utilities (single-purpose CLI tools, <50 real functions), skip formal module formation:
+
+1. Identify the 1-3 core business functions (via string references from Phase 1)
+2. Decompile only those + their direct helpers
+3. Go directly to Phase 5 cleanup
+
+Use this heuristic: if the program has a clear single-purpose `Usage:` string and fewer than 20 application-level functions (excluding runtime/STL), treat it as a small binary.
+
+### Full Module Formation
+
+For larger binaries, group functions by real behavior, not by decompiler order.
 
 Typical buckets:
 
@@ -295,6 +371,21 @@ Important:
 
 Read [references/mapping-format.md](references/mapping-format.md) before running the bundled scripts.
 
+### Comparing Raw vs Clean
+
+After renaming, use `literal_diff.py` with the `--mapping` option to compare files across directories:
+
+```bash
+# After Phase 4 renaming, files have different names in raw/ and src/
+# Use the mapping file to correlate them:
+python3 scripts/literal_diff.py \
+  --left-root phase2 \
+  --right-root clean/src \
+  --mapping mapping.tsv
+```
+
+Without `--mapping`, the script matches files by relative path (original behavior), which only works if file names are the same in both trees.
+
 ## Phase 5: AI Cleanup To Equivalent Readable C
 
 Goal: turn raw decompiler output into readable, equivalent C without losing behavior.
@@ -338,6 +429,35 @@ Whenever a cleaned file becomes much smaller than the raw one, compare:
 - error/status code coverage
 
 If the file is a converter or table-heavy module, prefer preserving the original table contents.
+
+## C++ Binary Handling
+
+C++ binaries require extra care due to template expansion, STL inlining, and name mangling.
+
+### Identifying C++ Binaries
+
+Signs of a C++ binary:
+
+- Imported DLLs: `MSVCP140[D].dll`, `VCRUNTIME140[D].dll`, `ucrtbase[d].dll`
+- Mangled imports: `__CxxThrowException`, `__std_exception_destroy`, `??1...`
+- Source path strings from C++ headers: `<charconv>`, `<filesystem>`, `<xmemory>`, `<xlocale>`
+
+### MSVC Debug Build Artifacts
+
+Debug builds add significant noise:
+
+- **Stack cookie init loops**: `for (iVar = 0xNN; iVar != 0; iVar = iVar + -1) { *ptr = 0xcccccccc; }`
+- **Security cookie checks**: `uStack_10 = *0x140044040 ^ auStack_d8;` at function entry, `fcn.14000188e(uStack_10 ^ auStack_d8);` at exit
+- **Local variable names**: `auStack_XXX`, `iStack_XXX`, `puVarN`, `cVar1` (decompiler-generated)
+
+### Cleanup Strategy for C++
+
+1. **Strip security cookie boilerplate**: Remove init-loops and cookie-check calls at function boundaries — they are compiler-generated, not business logic.
+2. **Collapse STL wrappers**: Functions that only construct/destroy `std::string`, `std::vector`, `std::filesystem::path` can be replaced with a comment: `// std::string path_str(path_arg)`.
+3. **Recover semantics from mangled names**: Use `afl` and `izz` to map mangled import names to their actual purpose before renaming.
+4. **Preserve C++ idioms**: Keep `std::filesystem::path` operations as-is rather than expanding them into raw struct manipulation.
+
+---
 
 ## Batch Size Rules
 
