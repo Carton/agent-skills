@@ -75,20 +75,16 @@ r2pm -U
 r2pm -ci r2ghidra
 ```
 
-### Recommended Optional Tools
+### Optional & Target-Specific Tools
 
-- `ghidra`: useful for GUI validation and headless analysis passes
-- `gdb-multiarch`: useful for non-native ELF targets
-- `wine`: useful for observing PE executables or DLL loaders on Linux
-- `upx`: useful when the binary may be packed
-- `apktool`: only for Android APK/DEX/JAR workflows
-- archive/unpacker tools such as `p7zip-full`, `cabextract`, `unar`: useful for installers and embedded payloads
+Depending on your target, you may need additional tools:
 
-### Ghidra
+- **Analysis/Validation**: `ghidra` (highly recommended for validation and headless analysis)
+- **Target Observation**: `wine` (for PE), `apktool` (for Android)
+- **Unpacking/Utilities**: `upx`, `p7zip-full`, `cabextract`
+- **Multi-arch Debugging**: `gdb-multiarch`
 
-Ghidra is optional but strongly recommended for validation and headless bulk analysis. Install a supported JDK, then extract the official Ghidra release and use `analyzeHeadless` for scripted analysis.
-
-Read [references/install-linux.md](references/install-linux.md) before first-time setup.
+For detailed installation steps and troubleshooting, see [references/install-linux.md](references/install-linux.md).
 
 ## Phase 1: Exploratory Analysis
 

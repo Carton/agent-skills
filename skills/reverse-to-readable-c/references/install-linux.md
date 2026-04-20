@@ -1,29 +1,10 @@
-# Linux Install
+# Linux Install (Supplementary)
 
-This skill assumes Linux because radare2, r2pm, build tooling, and headless automation are easiest to manage there.
+This document provides troubleshooting and advanced installation details for the tools mentioned in the main [SKILL.md](../SKILL.md).
 
-## Baseline
+## Troubleshooting r2ghidra Installation
 
-```bash
-sudo apt update
-sudo apt install -y \
-  build-essential pkg-config git patch curl unzip zip \
-  python3 python3-pip file jq \
-  gdb binutils strace ltrace \
-  radare2
-```
-
-If your distro provides `radare2-dev`, install it too when building `r2ghidra` from `r2pm`.
-
-## r2pm and r2ghidra
-
-```bash
-r2pm init || true
-r2pm -U
-r2pm -ci r2ghidra
-```
-
-If `r2ghidra` build fails, check for missing:
+If `r2pm -ci r2ghidra` build fails, check for missing dependencies:
 
 - `pkg-config`
 - C/C++ compiler toolchain
