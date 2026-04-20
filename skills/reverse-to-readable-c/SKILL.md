@@ -9,6 +9,65 @@ Use this skill for full reverse-engineering projects where the goal is not just 
 
 The workflow is phase-based and aggressively context-limited. Never try to load the whole reverse-engineering output at once.
 
+## Prerequisites Check
+
+**Before starting**, verify that required tools are installed:
+
+```bash
+#!/bin/bash
+# Tool check script - save as check_tools.sh
+
+check_tool() {
+    if ! command -v $1 &> /dev/null; then
+        echo "❌ $1 not found"
+        return 1
+    else
+        echo "✓ $1 installed: $(which $1)"
+        return 0
+    fi
+}
+
+echo "=== Required Tools ==="
+check_tool r2 || { echo "Please install radare2 first"; exit 1; }
+check_tool file || { echo "Please install file command first"; exit 1; }
+check_tool python3 || { echo "Please install python3 first"; exit 1; }
+
+echo ""
+echo "=== Optional Tools ==="
+check_tool jq || echo "⚠️  jq not installed (recommended for JSON processing)"
+check_tool strings || echo "⚠️  strings not installed (part of binutils)"
+
+echo ""
+echo "=== r2ghidra Decompiler Check ==="
+R2_VERSION=$(r2 -v | head -1 | awk '{print $2}')
+echo "radare2 version: $R2_VERSION"
+
+# Check if r2ghidra plugin is compiled
+if [ -f ~/.local/share/radare2/r2pm/git/r2ghidra/src/core_ghidra.so ]; then
+    echo "✓ r2ghidra plugin compiled"
+else
+    echo "❌ r2ghidra plugin not compiled"
+    echo "Run: cd ~/.local/share/radare2/r2pm/git/r2ghidra && make && sudo make install"
+fi
+
+# Create test file to verify decompilation
+echo "int main() { return 0; }" > /tmp/test_r2.c
+gcc /tmp/test_r2.c -o /tmp/test_r2 2>/dev/null
+if r2 -q -c "aaa; pdg @ main" /tmp/test_r2 &> /dev/null; then
+    echo "✓ r2ghidra decompilation works"
+else
+    echo "❌ r2ghidra decompilation not working"
+fi
+rm -f /tmp/test_r2.c /tmp/test_r2
+```
+
+**Quick check** (one-liner):
+```bash
+check_tools() { which r2 && which file && which python3 && r2 -v | head -1; }; check_tools && echo "✓ Basic tools OK"
+```
+
+---
+
 ## Principles
 
 - Preserve originals. Raw outputs must remain available for diffing.
@@ -67,12 +126,21 @@ sudo apt install -y \
 
 If your distribution splits headers into a separate package, install the radare2 development package too before building plugins.
 
-Initialize and update `r2pm`, then install `r2ghidra`:
+Initialize and update `r2pm`, then install and compile `r2ghidra`:
 
 ```bash
+# 1. Download r2ghidra source
 r2pm init || true
 r2pm -U
 r2pm -ci r2ghidra
+
+# 2. Build and install (IMPORTANT: must be done manually)
+cd ~/.local/share/radare2/r2pm/git/r2ghidra
+make
+sudo make install
+
+# 3. Verify installation
+r2 -q -c "pdg --help" # requires a file to be opened, see verification below
 ```
 
 ### Optional & Target-Specific Tools
@@ -85,6 +153,34 @@ Depending on your target, you may need additional tools:
 - **Multi-arch Debugging**: `gdb-multiarch`
 
 For detailed installation steps and troubleshooting, see [references/install-linux.md](references/install-linux.md).
+
+### Verify Installation
+
+Verify that the toolchain works correctly:
+
+```bash
+# Create test binary
+echo 'int main() { return 0; }' > /tmp/test_r2.c
+gcc /tmp/test_r2.c -o /tmp/test_r2 2>/dev/null
+
+# Test radare2 basic functionality
+r2 -q -c "aaa; afl" /tmp/test_r2 && echo "✓ radare2 analysis works"
+
+# Test r2ghidra decompilation
+r2 -q -c "pdg @ main" /tmp/test_r2 && echo "✓ r2ghidra decompilation works"
+
+# Cleanup
+rm -f /tmp/test_r2.c /tmp/test_r2
+```
+
+**Checklist**:
+- [ ] `which r2` - radare2 executable exists
+- [ ] `r2 -v` - shows version info
+- [ ] `which file` - file command available
+- [ ] `ls ~/.local/share/radare2/r2pm/git/r2ghidra/src/*.so` - r2ghidra compiled
+- [ ] `r2 -q -c "pdg @ main" <binary>` - decompilation works
+
+---
 
 ## Phase 1: Exploratory Analysis
 
