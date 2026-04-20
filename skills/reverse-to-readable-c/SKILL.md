@@ -42,46 +42,11 @@ project/
 ├── phase4/                   # extra passes / delayed helper recovery
 ├── clean/
 │   ├── raw/                  # raw backup copied from phased outputs
-│   ├── src/                  # current readable tree
-│   ├── task_plan.md
-│   ├── findings.md
-│   └── progress.md
+│   └── src/                  # current readable tree
 └── scripts/                  # rename / annotation helpers
 ```
 
 If the repository already has a structure, preserve it and fit the workflow into it.
-
-## Phase 1: Exploratory Analysis
-
-Goal: identify the binary shape, main entry chain, probable modules, and the first 20-50 functions worth tracking.
-
-Use radare2 for discovery first. Typical actions:
-
-```bash
-r2 -A ./target_binary
-afl
-izz
-axt @@ sym.*
-```
-
-Useful r2 queries:
-
-- `afl` to list discovered functions
-- `afll` or `aflj` for sortable inventories
-- `izz` / `izj` for strings
-- `axt` for cross-references from important strings
-- `pdf @ addr` for assembly review
-- `agf @ addr` or `agfj @ addr` for local graph shape
-
-What to produce in phase 1:
-
-- an entry-chain note
-- a first-pass module map
-- a function index by address
-- a shortlist of business-critical roots
-- a risk list: parsers, session/auth, networking, startup, configuration, service, update, teardown
-
-Do not decompile everything yet.
 
 ## Linux Tooling Setup
 
@@ -124,6 +89,38 @@ r2pm -ci r2ghidra
 Ghidra is optional but strongly recommended for validation and headless bulk analysis. Install a supported JDK, then extract the official Ghidra release and use `analyzeHeadless` for scripted analysis.
 
 Read [references/install-linux.md](references/install-linux.md) before first-time setup.
+
+## Phase 1: Exploratory Analysis
+
+Goal: identify the binary shape, main entry chain, probable modules, and the first 20-50 functions worth tracking.
+
+Use radare2 for discovery first. Typical actions:
+
+```bash
+r2 -A ./target_binary
+afl
+izz
+axt @@ sym.*
+```
+
+Useful r2 queries:
+
+- `afl` to list discovered functions
+- `afll` or `aflj` for sortable inventories
+- `izz` / `izj` for strings
+- `axt` for cross-references from important strings
+- `pdf @ addr` for assembly review
+- `agf @ addr` or `agfj @ addr` for local graph shape
+
+What to produce in phase 1:
+
+- an entry-chain note
+- a first-pass module map
+- a function index by address
+- a shortlist of business-critical roots
+- a risk list: parsers, session/auth, networking, startup, configuration, service, update, teardown
+
+Do not decompile everything yet.
 
 ## Phase 2: Raw Per-Function Decompilation
 

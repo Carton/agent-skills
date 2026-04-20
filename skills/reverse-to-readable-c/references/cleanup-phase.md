@@ -28,13 +28,6 @@ This phase turns decompiler-shaped C into readable equivalent C.
 
 ## Common Reverse-Engineering Failure Modes
 
-- Error converters are often table-driven and should usually keep full original table contents.
-- Session and authentication code commonly hides critical distinctions such as:
-  - offline vs online paths
-  - cached-credential reuse
-  - token/password fallback
-  - callback type handling
-  - environment-variable publication
 - Post-login or post-init validation code is easy to over-compress; watch for entitlement checks, metadata refreshes, capability probes, and ready-state validation.
 - Launcher, configuration, service, and metadata modules often contain user-visible strings that act as semantic anchors.
 
