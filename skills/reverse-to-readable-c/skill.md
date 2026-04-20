@@ -202,6 +202,127 @@ Check for debug build indicators:
 - Mangled C++ symbols with debug info (e.g. `MSVCP140D.dll`, `ucrtbased.dll`)
 - Source file path strings in `.rdata`
 
+### PDB / Debug Symbols
+
+If the binary contains debug information (PDB path in strings or `.debug` sections), leverage it for better analysis:
+
+**Check for PDB availability:**
+```bash
+# Check if PDB path is embedded in the PE
+strings ./target_binary | grep -i "\.pdb"
+
+# In r2, check debug info
+r2 -q -c "i~pdb" ./target_binary
+```
+
+**PDB handling strategies:**
+
+| Scenario | Approach |
+|----------|----------|
+| PDB file available locally | Load it into r2 or Ghidra for rich symbol names, types, and source lines |
+| PDB path points to Microsoft Symbol Server | Use `e pdb.autoload=true` in r2 to auto-download |
+| PDB is a local debug build (not published) | PDB path is informational only; proceed without PDB but use other debug indicators |
+| No PDB / stripped binary | Standard workflow — recover names from strings and call-graph analysis |
+
+**Loading PDB in radare2:**
+```bash
+# If PDB file is available locally
+r2 -q -e pdb.autoload=true -c "aaa" ./target_binary
+
+# PDB provides: function names, variable names, type info, source line mapping
+# Check loaded symbols
+r2 -q -c "aaa; is~main" ./target_binary
+```
+
+**Loading PDB in Ghidra:**
+- GUI: `File → Parse PDB...` → select `.pdb` file
+- Headless: Ghidra's `PdbUniversalAnalyzer` runs automatically during import if PDB is found alongside the binary or via Symbol Server configuration
+- Configure Symbol Server path in Ghidra: `Edit → Tool Options → Symbol Server Path`
+
+PDB symbols dramatically improve decompilation quality — function names, parameter types, and local variable names replace decompiler-generated names like `fcn.1400010a0` and `auStack_XXX`.
+
+### Scope Configuration
+
+**Before diving into analysis**, confirm the reverse-engineering scope with the user:
+
+Ask the user these questions (use AskUserQuestion):
+
+1. **Reverse-engineering scope** (default: **application code only**):
+   - **Application code only** (recommended) — Focus on custom business logic. Exclude standard library, runtime, and third-party library code.
+   - **Application + uncertain functions** — Also include functions whose origin is unclear (e.g., no clear library signature).
+   - **Full binary** — Reverse everything, including all runtime and library wrapper code.
+
+2. **Is a PDB file available?** — If yes, use it to get symbol names and types automatically.
+
+3. **Is this a debug or release build?** — Debug builds have more noise but also more information.
+
+> **Default behavior**: Only reverse-engineer application code. Standard library wrappers, runtime support functions, and clearly identifiable third-party code should be cataloged but not decompiled unless the user explicitly requests it.
+
+### Library vs Application Code Separation
+
+This is a critical early step that reduces noise for all subsequent phases.
+
+**Step 1: Classify all functions**
+
+After `aaa`, classify functions into three categories:
+
+```bash
+# In r2 shell:
+aaa
+
+# 1. Imported functions (external library calls) — do NOT decompile
+afl~sym.imp.
+# These are calls TO external DLLs — just note their existence
+
+# 2. Import wrappers (thin shims around DLL calls) — usually skip
+afl~sub\.
+
+# 3. Application functions (everything else) — THIS is what we reverse
+afl~fcn\.
+```
+
+**Step 2: Identify known library patterns in application functions**
+
+Look for function names or call patterns that indicate library wrappers even within local code:
+
+```bash
+# MSVC C++ runtime wrappers (within the binary, not imports)
+afl~sub.MSVCP
+afl~sub.VCRUNTIME
+afl~sub.ucrtbase
+
+# STL / exception handling patterns
+afl~sub.*exception*
+afl~sub.*locale*
+```
+
+**Step 3: Build a function classification document**
+
+Produce a simple classification (in `phase1/function_classification.md`):
+
+```markdown
+# Function Classification
+
+| Category | Count | Notes |
+|----------|-------|-------|
+| Imported (external DLL calls) | N | Listed in ii / iij |
+| Runtime wrappers (MSVCP/VCRUNTIME/ucrtbase) | N | Thin shims around DLL calls |
+| STL / exception support | N | __CxxThrowException, etc. |
+| Application code (to reverse) | N | **This is the focus** |
+
+## Application Functions (sorted by address)
+| Address | Name (if known) | Size | Likely Role |
+|---------|-----------------|------|-------------|
+| 0x1400010a0 | fcn.1400010a0 | 150 | main (references Usage string) |
+| ...
+```
+
+**Step 4: Only decompile application functions**
+
+Use the classified list to drive Phase 2 decompilation. Never decompile imported functions or obvious runtime wrappers — they are already documented by their DLL name and symbol.
+
+> **Why this matters**: A typical C++ binary may have 90%+ runtime/STL code. Classifying early means you only decompile the 10% that matters, saving enormous amounts of time and context.
+
 ### radare2 Discovery
 
 Always use `aaa` (analyze all) and enable relocs for proper analysis:
@@ -249,6 +370,8 @@ Do not decompile everything yet.
 ## Phase 2: Raw Per-Function Decompilation
 
 Goal: export initial C-like code for only the functions needed for the current module.
+
+> **Important**: Only decompile functions classified as **application code** in Phase 1. Do not decompile imported functions, runtime wrappers, or third-party library code unless the user explicitly requested a broader scope.
 
 Prefer `r2ghidra` through radare2 when available:
 
@@ -495,16 +618,19 @@ Do not declare a module “done” just because it reads better.
 
 ## Minimal End-To-End Playbook
 
-1. Analyze the binary and identify roots.
-2. Create a phased workspace.
-3. Export raw C for a small address set.
-4. Form modules.
-5. Copy raw outputs into a clean tree and keep a raw backup tree.
-6. Apply reproducible rename scripts.
-7. Clean one module at a time into readable C.
-8. Compare cleaned files against raw backups for missing strings/tables/branches.
-9. Update docs, findings, and progress after each module.
-10. Only then move to the next module.
+1. Check prerequisites (tools installed, r2ghidra working).
+2. Identify the binary (file type, debug indicators, PDB availability).
+3. **Configure scope** — ask user: application code only (default) or full binary?
+4. Analyze and classify functions — separate library/runtime from application code.
+5. Create a phased workspace.
+6. Export raw C for application functions only (from the classification).
+7. Form modules (or use small binary fast-track).
+8. Copy raw outputs into a clean tree and keep a raw backup tree.
+9. Apply reproducible rename scripts.
+10. Clean one module at a time into readable C.
+11. Compare cleaned files against raw backups for missing strings/tables/branches.
+12. Update docs, findings, and progress after each module.
+13. Only then move to the next module.
 
 ## Completion Criteria
 
