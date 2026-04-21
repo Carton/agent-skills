@@ -310,7 +310,11 @@ vftable[-1] → RTTICompleteObjectLocator → TypeDescriptor (class name)
 
 **Before diving into analysis**, confirm the reverse-engineering scope with the user:
 
-Ask the user these questions (use AskUserQuestion):
+Ask the user these questions:
+
+- If your environment provides a structured question tool, use it.
+- If it does not, ask in a normal message.
+- If the user does not specify scope, default to **application code only**.
 
 1. **Reverse-engineering scope** (default: **application code only**):
    - **Application code only** (recommended) — Focus on custom business logic. Exclude standard library, runtime, and third-party library code.
@@ -480,12 +484,14 @@ r2 -q -e bin.relocs.apply=true -c "aaa; pdg @ fcn.1400010a0" ./target_binary
 `pdg` output contains ANSI escape codes by default. Strip them when saving to files:
 
 ```bash
-# Method 1: use r2 -- option (disables colors)
-r2 -- -q -e bin.relocs.apply=true -c "aaa; pdg @ fcn.1400010a0" ./target_binary > phase2/func_0x1400010a0.c
+# Method 1: disable colors explicitly (more portable)
+r2 -q -e scr.color=false -e bin.relocs.apply=true -c "aaa; pdg @ fcn.1400010a0" ./target_binary > phase2/func_0x1400010a0.c 2>/dev/null
 
 # Method 2: pipe through sed
 r2 -q -e bin.relocs.apply=true -c "aaa; pdg @ fcn.1400010a0" ./target_binary | sed 's/\x1b\[[0-9;]*m//g' > phase2/func_0x1400010a0.c
 ```
+
+When exporting machine-readable analysis output, write each command to a separate file. Do not concatenate `iI`, `iij`, `aflj`, and `izj` into one stream unless you explicitly want a mixed-format artifact for manual reading.
 
 ### C++ Binary Noise
 
