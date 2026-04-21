@@ -11,60 +11,13 @@ The workflow is phase-based and aggressively context-limited. Never try to load 
 
 ## Prerequisites Check
 
-**Before starting**, verify that required tools are installed:
+**Before starting**, run a quick tool check:
 
 ```bash
-#!/bin/bash
-# Tool check script - save as check_tools.sh
-
-check_tool() {
-    if ! command -v $1 &> /dev/null; then
-        echo "❌ $1 not found"
-        return 1
-    else
-        echo "✓ $1 installed: $(which $1)"
-        return 0
-    fi
-}
-
-echo "=== Required Tools ==="
-check_tool r2 || { echo "Please install radare2 first"; exit 1; }
-check_tool file || { echo "Please install file command first"; exit 1; }
-check_tool python3 || { echo "Please install python3 first"; exit 1; }
-
-echo ""
-echo "=== Optional Tools ==="
-check_tool jq || echo "⚠️  jq not installed (recommended for JSON processing)"
-check_tool strings || echo "⚠️  strings not installed (part of binutils)"
-
-echo ""
-echo "=== r2ghidra Decompiler Check ==="
-R2_VERSION=$(r2 -v | head -1 | awk '{print $2}')
-echo "radare2 version: $R2_VERSION"
-
-# Check if r2ghidra plugin is compiled
-if [ -f ~/.local/share/radare2/r2pm/git/r2ghidra/src/core_ghidra.so ]; then
-    echo "✓ r2ghidra plugin compiled"
-else
-    echo "❌ r2ghidra plugin not compiled"
-    echo "Run: cd ~/.local/share/radare2/r2pm/git/r2ghidra && make && sudo make install"
-fi
-
-# Create test file to verify decompilation
-echo "int main() { return 0; }" > /tmp/test_r2.c
-gcc /tmp/test_r2.c -o /tmp/test_r2 2>/dev/null
-if r2 -q -c "aaa; pdg @ main" /tmp/test_r2 &> /dev/null; then
-    echo "✓ r2ghidra decompilation works"
-else
-    echo "❌ r2ghidra decompilation not working"
-fi
-rm -f /tmp/test_r2.c /tmp/test_r2
+check_tools() { which r2 && which file && which python3 && r2 -v | head -1; }; check_tools && echo "OK"
 ```
 
-**Quick check** (one-liner):
-```bash
-check_tools() { which r2 && which file && which python3 && r2 -v | head -1; }; check_tools && echo "✓ Basic tools OK"
-```
+For full installation and troubleshooting, read [references/install-linux.md](references/install-linux.md).
 
 ---
 
@@ -106,78 +59,14 @@ project/
 
 If the repository already has a structure, preserve it and fit the workflow into it.
 
-## Linux Tooling Setup
+## Tooling Setup
 
-Assume a Linux execution environment. Install a minimal baseline first, then add optional tools by target type.
+See [references/install-linux.md](references/install-linux.md) for installation, r2ghidra setup, and target-specific optional tools (Ghidra, wine, etc.).
 
-### Minimal Baseline
-
-Use the system package manager for core tooling:
-
+Quick verify after install:
 ```bash
-sudo apt update
-sudo apt install -y \
-  build-essential pkg-config git patch curl unzip zip \
-  python3 python3-pip file jq \
-  gdb binutils strace ltrace \
-  radare2
+r2 -q -c "aaa; pdg @ main" /tmp/test_r2 && echo "decompilation works"
 ```
-
-If your distribution splits headers into a separate package, install the radare2 development package too before building plugins.
-
-Initialize and update `r2pm`, then install and compile `r2ghidra`:
-
-```bash
-# 1. Download r2ghidra source
-r2pm init || true
-r2pm -U
-r2pm -ci r2ghidra
-
-# 2. Build and install (IMPORTANT: must be done manually)
-cd ~/.local/share/radare2/r2pm/git/r2ghidra
-make
-sudo make install
-
-# 3. Verify installation
-r2 -q -c "pdg --help" # requires a file to be opened, see verification below
-```
-
-### Optional & Target-Specific Tools
-
-Depending on your target, you may need additional tools:
-
-- **Analysis/Validation**: `ghidra` (highly recommended for validation and headless analysis)
-- **Target Observation**: `wine` (for PE), `apktool` (for Android)
-- **Unpacking/Utilities**: `upx`, `p7zip-full`, `cabextract`
-- **Multi-arch Debugging**: `gdb-multiarch`
-
-For detailed installation steps and troubleshooting, see [references/install-linux.md](references/install-linux.md).
-
-### Verify Installation
-
-Verify that the toolchain works correctly:
-
-```bash
-# Create test binary
-echo 'int main() { return 0; }' > /tmp/test_r2.c
-gcc /tmp/test_r2.c -o /tmp/test_r2 2>/dev/null
-
-# Test radare2 basic functionality
-r2 -q -c "aaa; afl" /tmp/test_r2 && echo "✓ radare2 analysis works"
-
-# Test r2ghidra decompilation
-r2 -q -c "pdg @ main" /tmp/test_r2 && echo "✓ r2ghidra decompilation works"
-
-# Cleanup
-rm -f /tmp/test_r2.c /tmp/test_r2
-```
-
-**Checklist**:
-- [ ] `which r2` - radare2 executable exists
-- [ ] `r2 -v` - shows version info
-- [ ] `which file` - file command available
-- [ ] `ls ~/.local/share/radare2/r2pm/git/r2ghidra/src/*.so` - r2ghidra compiled
-- [ ] `r2 -q -c "pdg @ main" <binary>` - decompilation works
 
 ---
 
@@ -194,212 +83,21 @@ file ./target_binary
 strings ./target_binary | grep -iE "(usage|error|main|version|help|\.pdb|\.cpp)" | head -30
 ```
 
-Check for debug build indicators:
+**Then load the platform-specific reference:**
 
-- Stack cookie pattern: `0xcccccccc` fill values in decompiled output
-- PDB path strings: `D:\...\xxx.pdb`
-- Mangled C++ symbols with debug info (e.g. `MSVCP140D.dll`, `ucrtbased.dll`)
-- Source file path strings in `.rdata`
-
-### PDB / Debug Symbols
-
-If the binary contains debug information (PDB path in strings or `.debug` sections), leverage it for better analysis:
-
-**Check for PDB availability:**
-```bash
-# Check if PDB path is embedded in the PE
-strings ./target_binary | grep -i "\.pdb"
-
-# In r2, check debug info
-r2 -q -c "i~pdb" ./target_binary
-```
-
-**PDB handling strategies:**
-
-| Scenario | Approach |
-|----------|----------|
-| PDB file available locally | Load it into r2 or Ghidra for rich symbol names, types, and source lines |
-| PDB path points to Microsoft Symbol Server | Use `e pdb.autoload=true` in r2 to auto-download |
-| PDB is a local debug build (not published) | PDB path is informational only; proceed without PDB but use other debug indicators |
-| No PDB / stripped binary | Standard workflow — recover names from strings and call-graph analysis |
-
-**Loading PDB in radare2:**
-```bash
-# If PDB file is available locally
-r2 -q -e pdb.autoload=true -c "aaa" ./target_binary
-
-# PDB provides: function names, variable names, type info, source line mapping
-# Check loaded symbols
-r2 -q -c "aaa; is~main" ./target_binary
-```
-
-**Loading PDB in Ghidra:**
-- GUI: `File → Parse PDB...` → select `.pdb` file
-- Headless: Ghidra's `PdbUniversalAnalyzer` runs automatically during import if PDB is found alongside the binary or via Symbol Server configuration
-- Configure Symbol Server path in Ghidra: `Edit → Tool Options → Symbol Server Path`
-
-PDB symbols dramatically improve decompilation quality — function names, parameter types, and local variable names replace decompiler-generated names like `fcn.1400010a0` and `auStack_XXX`.
-
-### C++ RTTI / Type Recovery
-
-**For C++ binaries only.** If the binary was identified as C++ (see [Identifying C++ Binaries](#identifying-c-binaries)), perform type recovery **before** decompilation. Recovered type information helps the decompiler produce more accurate output — function parameters get real types instead of `int`, virtual dispatch is correctly resolved, and `std::` container usage patterns become recognizable.
-
-**Why before decompilation:** RTTI is objective metadata embedded by the compiler. Feeding it to the decompiler early means all subsequent decompilation benefits from correct type information. This reduces the "STL noise" problem where `std::vector::push_back` calls appear as anonymous `fcn.XXXX` invocations.
-
-#### Option A: Ghidra Headless (recommended)
-
-Ghidra's built-in `RecoverClassesFromRTTIScript` recovers class names, vtables, and inheritance hierarchies from MSVC RTTI structures. Requires Ghidra 9.2+.
-
-```bash
-# Run RTTI recovery headless (no GUI needed)
-<path_to_ghidra>/support/analyzeHeadless /tmp/ghidra_rtti ProjectName \
-    -import ./target_binary \
-    -postScript RecoverClassesFromRTTIScript.java \
-    -deleteProject
-```
-
-This populates Ghidra's Data Type Manager with recovered class structures. To use these types in subsequent r2 analysis, export the recovered type information (e.g., as a C header) and reference it during manual cleanup.
-
-**Known limitations:**
-- Virtual inheritance may produce incorrect `vbtablePtr` placement
-- Cross-DLL RTTI recovery is limited
-- Only polymorphic types (classes with at least one `virtual` function) have RTTI
-
-#### Option B: radare2 Built-in (basic)
-
-r2 has built-in vtable and RTTI analysis commands — less comprehensive than Ghidra but requires no additional tools:
-
-```bash
-# Set ABI to MSVC, then search for vtables with RTTI resolution
-r2 -q -e bin.relocs.apply=true -c "aaa; e anal.cpp.abi=msvc; avra" ./target_binary
-```
-
-- `av` — search data sections for vtables
-- `avr @ addr` — attempt RTTI resolution at a specific vtable address
-- `avra` — search all vtables and attempt RTTI resolution for each
-
-**Limitation**: r2's MSVC RTTI support recovers class names and vtable addresses but does not rebuild full class hierarchies or member layouts.
-
-#### What RTTI Recovery Produces
-
-| Artifact | Use in Reverse Engineering |
-|----------|---------------------------|
-| Class names (demangled) | Replace `fcn.XXXX` with meaningful names like `std::filesystem::path` |
-| vtable addresses | Identify virtual dispatch; distinguish method calls from function pointer calls |
-| Inheritance hierarchies | Understand class relationships; identify base class methods in derived classes |
-| Member offsets (approximate) | Understand data layout of `this` pointer usage in decompiled output |
-
-#### Manual RTTI Inspection (fallback)
-
-If automated tools are unavailable, RTTI structures can be found manually in MSVC binaries:
-
-1. Search `.rdata` for class name strings: `.?AV` (classes with virtual functions), `.?AU` (non-virtual classes)
-2. Cross-reference backward from `TypeDescriptor` to find `RTTICompleteObjectLocator`
-3. Follow the locator chain:
-
-```
-vftable[-1] → RTTICompleteObjectLocator → TypeDescriptor (class name)
-                                            → ClassHierarchyDescriptor → BaseClassArray
-                                                                       → BaseClassDescriptor[] (inheritance)
-```
-
-> **Note**: RTTI is only generated for **polymorphic types** (classes with at least one `virtual` function). Non-polymorphic types and most STL internal types will not have RTTI. For C++ binaries with RTTI disabled (`/GR-`), this step produces no results — proceed with standard decompilation.
-
-### ELF Binary Identification
-
-For Linux/ELF targets, use ELF-specific tools for initial analysis:
-
-```bash
-# ELF header and section overview
-readelf -h ./target_binary          # file type, architecture, entry point
-readelf -S ./target_binary          # section headers
-readelf -l ./target_binary          # program headers (segments)
-
-# Symbol tables
-nm -D ./target_binary               # dynamic symbols (imports/exports)
-readelf -s ./target_binary          # full symbol table (if non-stripped)
-
-# Disassembly
-objdump -d ./target_binary          # full disassembly
-objdump -t ./target_binary          # symbol table
-eu-readelf -s ./target_binary       # alternative readelf (often more readable)
-```
-
-**ELF binary type detection:**
-
-| Check | Command | What It Tells You |
-|-------|---------|-------------------|
-| Stripped vs non-stripped | `readelf -s ./target_binary \| head -5` | Empty output = stripped |
-| PIE (Position Independent Executable) | `readelf -h \| grep Type` | `DYN` = PIE, `EXEC` = non-PIE |
-| RELRO | `readelf -l \| grep GNU_RELRO` | Present = partial/full RELRO |
-| Stack canary | `readelf -s \| grep __stack_chk` | Present = stack protection enabled |
-| Fortified functions | `nm -D \| grep __\*_chk` | Present = glibc FORTIFY_SOURCE |
-
-**glibc fortified function mapping:**
-
-Fortified glibc functions appear with a `__*_chk` suffix. Map them back to the original function name during cleanup:
-
-| Fortified Name | Original | Notes |
-|----------------|----------|-------|
-| `__printf_chk` | `printf` | `__printf_chk(flag, fmt, ...)` |
-| `__fprintf_chk` | `fprintf` | Extra `flag` parameter |
-| `__sprintf_chk` | `sprintf` | Extra `flag` and `len` parameters |
-| `__memcpy_chk` | `memcpy` | Extra `len` parameter |
-| `__memmove_chk` | `memmove` | Extra `len` parameter |
-| `__memset_chk` | `memset` | Extra `len` parameter |
-| `__strcpy_chk` | `strcpy` | Extra `len` parameter |
-| `__strncpy_chk` | `strncpy` | Extra `len` parameter |
-| `__read_chk` | `read` | Extra `len` parameter |
-| `__recv_chk` | `recv` | Extra `len` parameter |
-
-**Debug symbols (DWARF):**
-
-```bash
-# Check for DWARF debug info
-readelf --debug-dump=info ./target_binary | head -20
-readelf -S ./target_binary | grep debug     # .debug_info, .debug_line, etc.
-
-# Source file paths from debug info
-readelf --debug-dump=line ./target_binary | grep -i '\.c$' | head -20
-```
-
-**Source file path clues for system utilities:**
-
-```bash
-# For coreutils/glibc programs, source paths reveal the project
-strings ./target_binary | grep -E '\.(c|h)$' | head -20
-# e.g., "lib/quote.c", "src/cp.c", "gnulib/lib/error.c"
-
-# Identify GNU coreutils version
-strings ./target_binary | grep -i 'coreutils\|GNU\|PACKAGE_VERSION'
-```
+| Detection | Action |
+|-----------|--------|
+| `file` output contains "PE32+" or "PE32" | Read [references/pe-binary.md](references/pe-binary.md) |
+| `file` output contains "ELF" | Read [references/elf-binary.md](references/elf-binary.md) |
+| C++ indicators found (MSVC DLLs, mangled names, `<stl>` headers) | Read [references/cpp-handling.md](references/cpp-handling.md) |
 
 ### Scope Configuration
 
-**Before diving into analysis**, confirm the reverse-engineering scope with the user:
+**Before diving into analysis**, confirm scope with the user. Default: **application code only**.
 
-Ask the user these questions:
-
-- If your environment provides a structured question tool, use it.
-- If it does not, ask in a normal message.
-- If the user does not specify scope, default to **application code only**.
-
-1. **Reverse-engineering scope** (default: **application code only**):
-   - **Application code only** (recommended) — Focus on custom business logic. Exclude standard library, runtime, and third-party library code.
-   - **Application + uncertain functions** — Also include functions whose origin is unclear (e.g., no clear library signature).
-   - **Full binary** — Reverse everything, including all runtime and library wrapper code.
-
-**PE (Windows) specific questions:**
-
-2. **Is a PDB file available?** — If yes, use it to get symbol names and types automatically.
-3. **Is this a debug or release build?** — Debug builds have more noise but also more information.
-
-**ELF (Linux) specific questions:**
-
-2. **Is DWARF debug info present?** — Check `readelf -S | grep debug`. If yes, use `readelf --debug-dump` for source lines and variable names.
-3. **Is this a PIE binary?** — Check `readelf -h | grep Type`. PIE binaries (`DYN`) have different address layout; use `-e bin.relocs.apply=true` in r2.
-4. **Is this a stripped binary?** — Stripped binaries have no symbol table; function classification relies more on string cross-references and call-graph analysis.
-5. **Are fortified glibc functions used?** — `nm -D | grep __*_chk` reveals FORTIFY_SOURCE usage; these map to standard C functions (see [ELF Binary Identification](#elf-binary-identification)).
+1. **Scope**: application code only / application + uncertain / full binary
+2. **Platform-specific questions**: load the platform reference above for detailed questions (PDB availability for PE, DWARF/PIE/stripped for ELF)
+3. **Language-specific**: if C++ detected, load [references/cpp-handling.md](references/cpp-handling.md)
 
 > **Default behavior**: Only reverse-engineer application code. Standard library wrappers, runtime support functions, and clearly identifiable third-party code should be cataloged but not decompiled unless the user explicitly requests it.
 
@@ -437,21 +135,10 @@ print(f'imports={len(imports)} local={len(local)}')
 
 **Step 2: Identify known library patterns in application functions**
 
-Look for function names or call patterns that indicate library wrappers even within local code:
+Look for function names or call patterns that indicate library wrappers even within local code. Platform-specific patterns are documented in the platform references:
 
-```bash
-# MSVC C++ runtime wrappers (within the binary, not imports)
-r2 -q -e bin.relocs.apply=true -c "aaa; afl" ./target_binary | grep 'sub\.MSVCP'
-r2 -q -e bin.relocs.apply=true -c "aaa; afl" ./target_binary | grep 'sub\.VCRUNTIME'
-r2 -q -e bin.relocs.apply=true -c "aaa; afl" ./target_binary | grep 'sub\.ucrtbase'
-
-# STL / exception handling patterns
-r2 -q -e bin.relocs.apply=true -c "aaa; afl" ./target_binary | grep -i 'exception'
-r2 -q -e bin.relocs.apply=true -c "aaa; afl" ./target_binary | grep -i 'locale'
-
-# Named STL methods
-r2 -q -e bin.relocs.apply=true -c "aaa; afl" ./target_binary | grep 'method\.std::'
-```
+- [references/pe-binary.md](references/pe-binary.md) — MSVC runtime wrappers, STL patterns
+- [references/elf-binary.md](references/elf-binary.md) — glibc patterns, fortified functions
 
 **Step 2b: Filter real application functions via string cross-references**
 
@@ -549,37 +236,6 @@ axt @ <string_addr>
 
 Do not decompile everything yet.
 
-### Linux System Utility Patterns
-
-GNU coreutils and glibc-linked programs share common patterns that appear frequently in decompiled output:
-
-**i18n boilerplate (gettext):**
-```c
-setlocale(LC_ALL, "");
-bindtextdomain(PACKAGE, LOCALEDIR);
-textdomain(PACKAGE);
-```
-These are initialization calls that can be collapsed to a single comment: `// i18n initialization (gettext)`.
-
-**Stack canary pattern (x86-64):**
-```c
-void *canary = *(void **)((int64_t)fs:0x28 + 0);
-// ... function body ...
-if (canary != *(void **)((int64_t)fs:0x28 + 0)) {
-    __stack_chk_fail();
-}
-```
-The canary setup and check are compiler-generated security code — remove during cleanup or mark with `/* stack canary */`.
-
-**glibc fortified function calls:**
-```c
-// Instead of: printf(fmt, args...)
-__printf_chk(1, fmt, args...)   // flag=1 means check stack buffer overflow
-// Instead of: memcpy(dst, src, n)
-__memcpy_chk(dst, src, n, dest_size)  // extra dest_size parameter
-```
-Map these back to the original function names. The extra `flag`/`size` parameter is injected by the compiler for buffer overflow detection and should be dropped.
-
 ## Phase 2: Raw Per-Function Decompilation
 
 Goal: export initial C-like code for only the functions needed for the current module.
@@ -648,20 +304,7 @@ decompile_function() {
 
 ### C++ Binary Noise
 
-C++ binaries (especially MSVC debug builds) produce very large decompiled output due to:
-
-- STL container inline expansion (`std::string`, `std::vector`, `std::filesystem::path`)
-- Exception handling frames (`__CxxFrameHandler4`, cookie checks)
-- Debug stack initialization (`0xcccccccc` fill loops)
-- Template instantiation noise
-
-For C++ targets, consider:
-
-1. **Identify runtime vs business logic**: Mark functions that only call `MSVCP140D.dll` / `ucrtbased.dll` as runtime helpers early.
-2. **Focus on call-graph roots**: Start from functions that reference application strings, not from every function.
-3. **Batch-export selectively**: Only decompile functions that are 1-2 calls away from a business-critical root.
-
-See [C++ Binary Handling](#c-binary-handling) for detailed strategies.
+For C++ targets, see [references/cpp-handling.md](references/cpp-handling.md) for noise patterns and cleanup strategy.
 
 ### File Organization
 
@@ -805,62 +448,6 @@ Whenever a cleaned file becomes much smaller than the raw one, compare:
 
 If the file is a converter or table-heavy module, prefer preserving the original table contents.
 
-## C++ Binary Handling
-
-C++ binaries require extra care due to template expansion, STL inlining, and name mangling.
-
-### Identifying C++ Binaries
-
-Signs of a C++ binary:
-
-- Imported DLLs: `MSVCP140[D].dll`, `VCRUNTIME140[D].dll`, `ucrtbase[d].dll`
-- Mangled imports: `__CxxThrowException`, `__std_exception_destroy`, `??1...`
-- Source path strings from C++ headers: `<charconv>`, `<filesystem>`, `<xmemory>`, `<xlocale>`
-
-### MSVC Debug Build Artifacts
-
-Debug builds add significant noise:
-
-- **Stack cookie init loops**: `for (iVar = 0xNN; iVar != 0; iVar = iVar + -1) { *ptr = 0xcccccccc; }`
-- **Security cookie checks**: `uStack_10 = *0x140044040 ^ auStack_d8;` at function entry, `fcn.14000188e(uStack_10 ^ auStack_d8);` at exit
-- **Local variable names**: `auStack_XXX`, `iStack_XXX`, `puVarN`, `cVar1` (decompiler-generated)
-
-### Cleanup Strategy for C++
-
-1. **Strip security cookie boilerplate**: Remove init-loops and cookie-check calls at function boundaries — they are compiler-generated, not business logic.
-2. **Collapse STL wrappers**: Functions that only construct/destroy `std::string`, `std::vector`, `std::filesystem::path` can be replaced with a comment: `// std::string path_str(path_arg)`.
-3. **Recover semantics from mangled names**: Use `afl` and `izz` to map mangled import names to their actual purpose before renaming.
-4. **Preserve C++ idioms**: Keep `std::filesystem::path` operations as-is rather than expanding them into raw struct manipulation.
-
-### Recommended Output Strategy for C++ Targets
-
-> **Do NOT attempt to generate C++ code directly.** All mainstream decompilers (Ghidra, r2ghidra, IDA Hex-Rays) output C-like pseudocode regardless of the original source language. C++ abstractions (classes, templates, inheritance, vtables) are flattened at compile time and cannot be recovered automatically.
-
-The recommended two-phase approach:
-
-**Phase A — C pseudocode (what decompilers produce)**
-
-- Accept that the raw output is C, not C++.
-- Focus on **behavioral accuracy**: get the algorithm, control flow, and data flow right.
-- Collapse STL noise into descriptive comments (e.g., `// std::vector<path> candidates`).
-- Preserve all string literals, error codes, and state transitions.
-- This phase produces the `clean/src/` tree.
-
-**Phase B — Manual C++ reconstruction (optional, when original language is confirmed C++)**
-
-- Use decompiler output from Phase A as the behavioral specification.
-- Identify C++ patterns from clues: RTTI structures, vtable layouts, constructor/destructor pairs, `this` pointer passing conventions, `std::` container usage patterns.
-- Use Ghidra's `RecoverClassesFromRTTIScript` (built-in, or headless via `analyzeHeadless -postScript`) to recover class hierarchies. See [C++ RTTI / Type Recovery](#c-rtti--type-recovery) for details.
-- Manually rewrite in idiomatic C++ based on the behavioral specification.
-- This is a **human-guided** step, not an automated one.
-
-**Why not generate C++ directly:**
-
-- Decompilers cannot distinguish a `std::vector::push_back` loop from a hand-rolled array append.
-- Template instantiations produce dozens of near-identical functions that look like different code.
-- RAII destructors are scattered across every branch exit and cannot be recovered from stack analysis alone.
-- The result of forcing C++ output is often misleading — it looks like C++ but behaves incorrectly (wrong types, wrong class boundaries, missing virtual dispatch).
-
 ---
 
 ## Batch Size Rules
@@ -912,8 +499,8 @@ A cleaned reverse-engineering pass counts as done only when all of the following
 ## Minimal End-To-End Playbook
 
 1. Check prerequisites (tools installed, r2ghidra working).
-2. Identify the binary (file type, debug indicators, PDB availability).
-3. **C++ only**: Run RTTI / type recovery (Ghidra headless or r2 `avra`) before decompilation.
+2. Identify the binary (file type). Load platform reference (PE/ELF) and language reference (C++ if applicable).
+3. **C++ only**: Follow RTTI/type recovery steps in [references/cpp-handling.md](references/cpp-handling.md).
 4. **Configure scope** — ask user: application code only (default) or full binary?
 5. Analyze and classify functions — separate library/runtime from application code.
 6. Create a phased workspace.
