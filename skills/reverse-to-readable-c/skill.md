@@ -94,15 +94,14 @@ Use a phased workspace. A practical layout is:
 
 ```text
 project/
-├── docs/                     # findings, indexes, architecture notes
-├── phase1/                   # exploratory analysis and reports
-├── phase2/                   # raw per-function decompilation output
-├── phase3/                   # secondary helper/support decompilation output
-├── phase4/                   # extra passes / delayed helper recovery
+├── docs/                     # [Phase 1] findings, indexes, architecture notes
+├── phase1/                   # [Phase 1] exploratory analysis and reports
+├── phase2/                   # [Phase 2] raw per-function decompilation output
 ├── clean/
-│   ├── raw/                  # raw backup copied from phased outputs
-│   └── src/                  # current readable tree
-└── scripts/                  # rename / annotation helpers
+│   ├── raw/                  # [Phase 4] raw backup of all phase2 outputs
+│   └── src/                  # [Phase 4→5] renamed + cleaned readable tree
+├── scripts/                  # rename / annotation helpers
+└── mapping.tsv               # [Phase 4] file/function rename mapping
 ```
 
 If the repository already has a structure, preserve it and fit the workflow into it.
@@ -306,6 +305,75 @@ vftable[-1] → RTTICompleteObjectLocator → TypeDescriptor (class name)
 
 > **Note**: RTTI is only generated for **polymorphic types** (classes with at least one `virtual` function). Non-polymorphic types and most STL internal types will not have RTTI. For C++ binaries with RTTI disabled (`/GR-`), this step produces no results — proceed with standard decompilation.
 
+### ELF Binary Identification
+
+For Linux/ELF targets, use ELF-specific tools for initial analysis:
+
+```bash
+# ELF header and section overview
+readelf -h ./target_binary          # file type, architecture, entry point
+readelf -S ./target_binary          # section headers
+readelf -l ./target_binary          # program headers (segments)
+
+# Symbol tables
+nm -D ./target_binary               # dynamic symbols (imports/exports)
+readelf -s ./target_binary          # full symbol table (if non-stripped)
+
+# Disassembly
+objdump -d ./target_binary          # full disassembly
+objdump -t ./target_binary          # symbol table
+eu-readelf -s ./target_binary       # alternative readelf (often more readable)
+```
+
+**ELF binary type detection:**
+
+| Check | Command | What It Tells You |
+|-------|---------|-------------------|
+| Stripped vs non-stripped | `readelf -s ./target_binary \| head -5` | Empty output = stripped |
+| PIE (Position Independent Executable) | `readelf -h \| grep Type` | `DYN` = PIE, `EXEC` = non-PIE |
+| RELRO | `readelf -l \| grep GNU_RELRO` | Present = partial/full RELRO |
+| Stack canary | `readelf -s \| grep __stack_chk` | Present = stack protection enabled |
+| Fortified functions | `nm -D \| grep __\*_chk` | Present = glibc FORTIFY_SOURCE |
+
+**glibc fortified function mapping:**
+
+Fortified glibc functions appear with a `__*_chk` suffix. Map them back to the original function name during cleanup:
+
+| Fortified Name | Original | Notes |
+|----------------|----------|-------|
+| `__printf_chk` | `printf` | `__printf_chk(flag, fmt, ...)` |
+| `__fprintf_chk` | `fprintf` | Extra `flag` parameter |
+| `__sprintf_chk` | `sprintf` | Extra `flag` and `len` parameters |
+| `__memcpy_chk` | `memcpy` | Extra `len` parameter |
+| `__memmove_chk` | `memmove` | Extra `len` parameter |
+| `__memset_chk` | `memset` | Extra `len` parameter |
+| `__strcpy_chk` | `strcpy` | Extra `len` parameter |
+| `__strncpy_chk` | `strncpy` | Extra `len` parameter |
+| `__read_chk` | `read` | Extra `len` parameter |
+| `__recv_chk` | `recv` | Extra `len` parameter |
+
+**Debug symbols (DWARF):**
+
+```bash
+# Check for DWARF debug info
+readelf --debug-dump=info ./target_binary | head -20
+readelf -S ./target_binary | grep debug     # .debug_info, .debug_line, etc.
+
+# Source file paths from debug info
+readelf --debug-dump=line ./target_binary | grep -i '\.c$' | head -20
+```
+
+**Source file path clues for system utilities:**
+
+```bash
+# For coreutils/glibc programs, source paths reveal the project
+strings ./target_binary | grep -E '\.(c|h)$' | head -20
+# e.g., "lib/quote.c", "src/cp.c", "gnulib/lib/error.c"
+
+# Identify GNU coreutils version
+strings ./target_binary | grep -i 'coreutils\|GNU\|PACKAGE_VERSION'
+```
+
 ### Scope Configuration
 
 **Before diving into analysis**, confirm the reverse-engineering scope with the user:
@@ -321,9 +389,17 @@ Ask the user these questions:
    - **Application + uncertain functions** — Also include functions whose origin is unclear (e.g., no clear library signature).
    - **Full binary** — Reverse everything, including all runtime and library wrapper code.
 
-2. **Is a PDB file available?** — If yes, use it to get symbol names and types automatically.
+**PE (Windows) specific questions:**
 
+2. **Is a PDB file available?** — If yes, use it to get symbol names and types automatically.
 3. **Is this a debug or release build?** — Debug builds have more noise but also more information.
+
+**ELF (Linux) specific questions:**
+
+2. **Is DWARF debug info present?** — Check `readelf -S | grep debug`. If yes, use `readelf --debug-dump` for source lines and variable names.
+3. **Is this a PIE binary?** — Check `readelf -h | grep Type`. PIE binaries (`DYN`) have different address layout; use `-e bin.relocs.apply=true` in r2.
+4. **Is this a stripped binary?** — Stripped binaries have no symbol table; function classification relies more on string cross-references and call-graph analysis.
+5. **Are fortified glibc functions used?** — `nm -D | grep __*_chk` reveals FORTIFY_SOURCE usage; these map to standard C functions (see [ELF Binary Identification](#elf-binary-identification)).
 
 > **Default behavior**: Only reverse-engineer application code. Standard library wrappers, runtime support functions, and clearly identifiable third-party code should be cataloged but not decompiled unless the user explicitly requests it.
 
@@ -333,21 +409,30 @@ This is a critical early step that reduces noise for all subsequent phases.
 
 **Step 1: Classify all functions**
 
-After `aaa`, classify functions into three categories:
+After `aaa`, classify functions into three categories.
+
+> **Important**: r2's `~` operator uses **substring matching**, not regex. This means `\.` is treated literally as backslash + dot in bash, not as a regex escape. For reliable scripting, prefer piping through `grep`.
 
 ```bash
-# In r2 shell:
+# === Method A: bash pipe (recommended for scripting) ===
+r2 -q -e bin.relocs.apply=true -c "aaa; afl" ./target_binary | grep 'sym\.imp\.'  # imports
+r2 -q -e bin.relocs.apply=true -c "aaa; afl" ./target_binary | grep -v 'sym\.imp\.' | grep -v 'entry'  # local functions
+
+# === Method B: r2 internal grep (inside r2 interactive shell only) ===
+# NOTE: r2 ~ uses substring match, NOT regex. '.' matches literal dot.
+# This does NOT work correctly from bash -c due to escaping conflicts.
 aaa
+afl~sym.imp.       # imports — matches substring "sym.imp."
+afl~fcn.           # local functions — matches substring "fcn."
 
-# 1. Imported functions (external library calls) — do NOT decompile
-afl~sym.imp.
-# These are calls TO external DLLs — just note their existence
-
-# 2. Import wrappers (thin shims around DLL calls) — usually skip
-afl~sub\.
-
-# 3. Application functions (everything else) — THIS is what we reverse
-afl~fcn\.
+# === Method C: r2 -c with jq for JSON processing ===
+r2 -q -e bin.relocs.apply=true -c "aaa; aflj" ./target_binary | python3 -c "
+import json, sys
+data = json.load(sys.stdin)
+imports = [f for f in data if f['name'].startswith('sym.imp')]
+local = [f for f in data if not f['name'].startswith('sym.imp') and not f['name'].startswith('entry')]
+print(f'imports={len(imports)} local={len(local)}')
+"
 ```
 
 **Step 2: Identify known library patterns in application functions**
@@ -356,16 +441,16 @@ Look for function names or call patterns that indicate library wrappers even wit
 
 ```bash
 # MSVC C++ runtime wrappers (within the binary, not imports)
-afl~sub.MSVCP
-afl~sub.VCRUNTIME
-afl~sub.ucrtbase
+r2 -q -e bin.relocs.apply=true -c "aaa; afl" ./target_binary | grep 'sub\.MSVCP'
+r2 -q -e bin.relocs.apply=true -c "aaa; afl" ./target_binary | grep 'sub\.VCRUNTIME'
+r2 -q -e bin.relocs.apply=true -c "aaa; afl" ./target_binary | grep 'sub\.ucrtbase'
 
 # STL / exception handling patterns
-afl~sub.*exception*
-afl~sub.*locale*
+r2 -q -e bin.relocs.apply=true -c "aaa; afl" ./target_binary | grep -i 'exception'
+r2 -q -e bin.relocs.apply=true -c "aaa; afl" ./target_binary | grep -i 'locale'
 
 # Named STL methods
-afl~method.std::
+r2 -q -e bin.relocs.apply=true -c "aaa; afl" ./target_binary | grep 'method\.std::'
 ```
 
 **Step 2b: Filter real application functions via string cross-references**
@@ -374,10 +459,10 @@ afl~method.std::
 
 ```bash
 # 1. Extract application-specific strings (Usage, error messages, brand names, etc.)
-iz~Usage
-iz~Error
-iz~<program_name>
-iz~<key_domain_string>
+r2 -q -e bin.relocs.apply=true -c "aaa; iz" ./target_binary | grep -i 'Usage'
+r2 -q -e bin.relocs.apply=true -c "aaa; iz" ./target_binary | grep -i 'Error'
+r2 -q -e bin.relocs.apply=true -c "aaa; iz" ./target_binary | grep '<program_name>'
+r2 -q -e bin.relocs.apply=true -c "aaa; iz" ./target_binary | grep '<key_domain_string>'
 
 # 2. For each interesting string, find which function references it
 axt @ <string_vaddr>
@@ -447,9 +532,9 @@ If no symbol table is available, find `main` via string cross-references:
 ```bash
 # In r2 shell:
 aaa
-# Find usage/help strings
-iz~Usage
-iz~help
+# Find usage/help strings (pipe through grep for reliability)
+r2 -q -e bin.relocs.apply=true -c "aaa; iz" ./target_binary | grep -i 'Usage'
+r2 -q -e bin.relocs.apply=true -c "aaa; iz" ./target_binary | grep -i 'help'
 # Cross-reference to find which function uses them
 axt @ <string_addr>
 ```
@@ -463,6 +548,37 @@ axt @ <string_addr>
 - a risk list: parsers, session/auth, networking, startup, configuration, service, update, teardown
 
 Do not decompile everything yet.
+
+### Linux System Utility Patterns
+
+GNU coreutils and glibc-linked programs share common patterns that appear frequently in decompiled output:
+
+**i18n boilerplate (gettext):**
+```c
+setlocale(LC_ALL, "");
+bindtextdomain(PACKAGE, LOCALEDIR);
+textdomain(PACKAGE);
+```
+These are initialization calls that can be collapsed to a single comment: `// i18n initialization (gettext)`.
+
+**Stack canary pattern (x86-64):**
+```c
+void *canary = *(void **)((int64_t)fs:0x28 + 0);
+// ... function body ...
+if (canary != *(void **)((int64_t)fs:0x28 + 0)) {
+    __stack_chk_fail();
+}
+```
+The canary setup and check are compiler-generated security code — remove during cleanup or mark with `/* stack canary */`.
+
+**glibc fortified function calls:**
+```c
+// Instead of: printf(fmt, args...)
+__printf_chk(1, fmt, args...)   // flag=1 means check stack buffer overflow
+// Instead of: memcpy(dst, src, n)
+__memcpy_chk(dst, src, n, dest_size)  // extra dest_size parameter
+```
+Map these back to the original function names. The extra `flag`/`size` parameter is injected by the compiler for buffer overflow detection and should be dropped.
 
 ## Phase 2: Raw Per-Function Decompilation
 
@@ -492,6 +608,43 @@ r2 -q -e bin.relocs.apply=true -c "aaa; pdg @ fcn.1400010a0" ./target_binary | s
 ```
 
 When exporting machine-readable analysis output, write each command to a separate file. Do not concatenate `iI`, `iij`, `aflj`, and `izj` into one stream unless you explicitly want a mixed-format artifact for manual reading.
+
+### Decompiler Crash Fallback
+
+`pdg` (r2ghidra) may crash or produce empty output for certain functions, especially large ones or those with unusual control flow. Use a graduated fallback strategy:
+
+```bash
+# Level 1: r2ghidra decompiler (best quality)
+timeout 60 r2 -q -e scr.color=false -e bin.relocs.apply=true \
+  -c "aaa; pdg @ fcn.00401234" ./target_binary
+
+# Level 2: r2 built-in pdc (less accurate, but more stable)
+timeout 60 r2 -q -e scr.color=false -e bin.relocs.apply=true \
+  -c "aaa; pdc @ fcn.00401234" ./target_binary
+
+# Level 3: raw disassembly (always works, but requires manual interpretation)
+timeout 60 r2 -q -e scr.color=false -e bin.relocs.apply=true \
+  -c "aaa; pdf @ fcn.00401234" ./target_binary
+```
+
+**Batch decompilation with fallback:**
+
+```bash
+decompile_function() {
+    local addr=$1
+    local outfile="phase2/func_${addr}.c"
+    # Try pdg first, fall back to pdc
+    if ! timeout 60 r2 -q -e scr.color=false -e bin.relocs.apply=true \
+        -c "aaa; pdg @ ${addr}" ./target_binary > "$outfile" 2>/dev/null \
+        || [ ! -s "$outfile" ]; then
+        echo "pdg failed for ${addr}, falling back to pdc"
+        timeout 60 r2 -q -e scr.color=false -e bin.relocs.apply=true \
+            -c "aaa; pdc @ ${addr}" ./target_binary > "$outfile" 2>/dev/null
+    fi
+}
+```
+
+> **Tip**: The `timeout` command prevents hanging on complex functions. Adjust the timeout (e.g., 30s for small functions, 120s for large ones) based on function size.
 
 ### C++ Binary Noise
 
