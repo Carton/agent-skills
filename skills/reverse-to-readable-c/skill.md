@@ -744,6 +744,18 @@ When reviewing cleaned reverse-engineered code, prioritize:
 
 Do not declare a module “done” just because it reads better.
 
+## Definition Of Done
+
+Do not stop at Phase 4.
+
+A cleaned reverse-engineering pass counts as done only when all of the following are true:
+
+- `clean/src/` is no longer raw decompiler output with only renamed files/functions.
+- The main flow is readable in staged logic, with variable names that reflect behavior.
+- Important literals, option names, state branches, and error paths are still present or explicitly re-homed.
+- Raw outputs remain preserved in a backup tree.
+- A post-cleanup comparison has been run and any reported gaps have been reviewed.
+
 ## Minimal End-To-End Playbook
 
 1. Check prerequisites (tools installed, r2ghidra working).

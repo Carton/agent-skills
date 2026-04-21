@@ -8,10 +8,20 @@ from pathlib import Path
 
 
 STRING_RE = re.compile(r'"((?:\\.|[^"\\])*)"')
+STRING_RUN_RE = re.compile(r'"(?:\\.|[^"\\])*"(?:\s*"(?:\\.|[^"\\])*")*', re.MULTILINE)
 
 
 def collect(path: Path) -> set[str]:
-    return set(STRING_RE.findall(path.read_text(encoding="utf-8")))
+    text = path.read_text(encoding="utf-8")
+    literals: set[str] = set()
+
+    for run in STRING_RUN_RE.finditer(text):
+        parts = STRING_RE.findall(run.group(0))
+        if not parts:
+            continue
+        literals.add("".join(parts))
+
+    return literals
 
 
 def iter_right_files(right_root: Path) -> list[Path]:
