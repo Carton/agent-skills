@@ -294,7 +294,35 @@ afl~sub.ucrtbase
 # STL / exception handling patterns
 afl~sub.*exception*
 afl~sub.*locale*
+
+# Named STL methods
+afl~method.std::
 ```
+
+**Step 2b: Filter real application functions via string cross-references**
+
+> **This is the most important step.** Simply filtering by `fcn.` prefix is insufficient — C++ binaries typically have hundreds of `fcn.*` functions that are STL template expansions or compiler-generated code. The reliable way to find real business logic is to start from **application strings** and trace backwards.
+
+```bash
+# 1. Extract application-specific strings (Usage, error messages, brand names, etc.)
+iz~Usage
+iz~Error
+iz~<program_name>
+iz~<key_domain_string>
+
+# 2. For each interesting string, find which function references it
+axt @ <string_vaddr>
+# Example: axt @ 0x1400366b0
+# Output: fcn.1400010a0 0x140006dc5 [STRN] lea rdx, str.Usage:...
+
+# 3. For each function found, extract its call targets to discover helpers
+pdf @ fcn.1400010a0 | grep -oP 'fcn\.\w+' | sort -u
+# Output: fcn.1400053a0, fcn.140001cad, fcn.140001276, ...
+```
+
+Repeat Step 2-3 for 2-3 rounds: from the root functions found in Step 2, decompile their helpers, discover new helpers, etc. Stop when newly discovered functions are clearly generic (path operations, string manipulation, security cookie).
+
+> **Result**: From 900+ `fcn.*` functions, this technique typically narrows down to 5-20 real business functions.
 
 **Step 3: Build a function classification document**
 
