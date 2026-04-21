@@ -30,6 +30,28 @@ For full installation and troubleshooting, read [references/install-linux.md](re
 - Treat decompiled C as an intermediate artifact, not the final output.
 - Do not abstract tables, strings, callbacks, or ownership/state logic away without checking the raw source again.
 
+## Workflow Tracking (Mandatory)
+
+To ensure stability and prevent redundant analysis in complex binary reversing, you MUST maintain a `progress.md` file in the project root. This is your "disk-based memory."
+
+### 1. Initialize `progress.md`
+Before Phase 1, create the file with this structure:
+- **Project Goal**: (e.g., Reverse `crackme.exe` logic)
+- **Current Phase**: (Phase 1/2/3/4/5)
+- **Functions Analysed**: [Address] | [Raw Name] | [Clean Name] | [Status: Raw/Renamed/Cleaned]
+- **Next Steps**: (Specific next 3 functions or tasks)
+
+### 2. The "Update-Before-Act" Rule
+- **Before** decompiling a new function: Check `progress.md` to see if it's already done.
+- **After** decompiling/cleaning a function: IMMEDIATELY update its status in `progress.md`.
+- **Phase Transition**: When moving from Phase 2 to 3, update the "Current Phase" and log the discovery of new modules.
+
+### 3. Context Recovery
+If the session length becomes excessive or you feel lost:
+1. Stop all analysis.
+2. Read `progress.md` and `mapping.tsv`.
+3. Re-orient based on the "Next Steps" section.
+
 ## Mandatory Context Hygiene
 
 - Never load the entire decompiled tree into context.
