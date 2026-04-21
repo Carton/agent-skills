@@ -12,6 +12,12 @@ set -e
 RAW_DIR="clean/raw"
 SRC_DIR="clean/src"
 
+if [ ! -d "$RAW_DIR" ] || [ ! -d "$SRC_DIR" ]; then
+    echo "❌ FAIL: Directories '$RAW_DIR' or '$SRC_DIR' do not exist."
+    echo "Please ensure you are running this script from the correct project root directory."
+    exit 1
+fi
+
 echo "=== Cleanup Verification ==="
 echo ""
 
@@ -58,8 +64,8 @@ while IFS= read -r -d '' RAW_FILE; do
 
     # Check if files are identical (not cleaned)
     if cmp -s "$RAW_FILE" "$SRC_FILE"; then
-        echo "⚠️  UNCLEANED: $REL_PATH"
-        ((UNCLEAN_COUNT++))
+        # echo "⚠️  UNCLEANED: $REL_PATH"
+        UNCLEAN_COUNT=$((UNCLEAN_COUNT + 1))
     else
         # Files are different, check size difference
         RAW_SIZE=$(stat -c%s "$RAW_FILE")
