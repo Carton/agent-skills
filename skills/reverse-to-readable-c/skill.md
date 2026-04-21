@@ -90,16 +90,17 @@ If the session length becomes excessive or you feel lost:
 2. Read `progress.md` and `mapping.tsv`.
 3. Re-orient based on the "Next Steps" section.
 
-## Mandatory Context Hygiene
+## Context Hygiene & Batch Rules
 
-- Never load the entire decompiled tree into context.
-- Limit each cleanup batch to one module or one narrow call-graph neighborhood.
-- Prefer 1 root function plus its direct helper/converter files in a single pass.
-- If a file is large, load only the relevant sections.
-- Keep a raw backup tree for every cleanup target.
-- Before replacing a large decompiled block with high-level helpers, verify that strings, lookup tables, event names, and error-code mappings are not being dropped.
+Never load the entire decompiled tree into context. Limit each cleanup batch to one module or one narrow call-graph neighborhood.
 
-Read [references/context-hygiene.md](references/context-hygiene.md) before large cleanup passes.
+**Safe batch sizes**: 1 main module per pass, 1-3 root files plus direct helpers. If a module is huge, split by sub-flow.
+
+**Good examples**: startup + config bootstrap, session core only, metadata loader only.
+
+**Bad examples**: all `src/**/*.c`, all session + launch + storage + config in one prompt.
+
+Read [references/context-hygiene.md](references/context-hygiene.md) for detailed rules and escalation triggers.
 
 ## Recommended Output Layout
 
@@ -122,15 +123,7 @@ project/
 └── mapping.tsv               # [Phase 4] File/function rename mapping
 ```
 
-**CRITICAL**: The `clean/raw/` and `clean/src/` directories MUST have:
-- **Identical directory structure**
-- **Identical filenames**
-- **Different content**: raw/ contains original decompiler output, src/ contains cleaned code
-
-This design enables:
-1. Easy comparison between raw and cleaned versions
-2. Verification that no files were missed during cleanup
-3. Detection of over-aggressive cleanup (files that became too small)
+`clean/raw/` and `clean/src/` must have identical directory structure and filenames but different content. See Phase 4 for details.
 
 If the repository already has a structure, preserve it and fit the workflow into it.
 
@@ -268,39 +261,16 @@ Use the classified list to drive Phase 2 decompilation. Never decompile imported
 
 > **Why this matters**: A typical C++ binary may have 90%+ runtime/STL code. Classifying early means you only decompile the 10% that matters, saving enormous amounts of time and context.
 
-### radare2 Discovery
+### r2 Quick Reference
 
-Always use `aaa` (analyze all) and enable relocs for proper analysis:
-
-```bash
-r2 -q -e bin.relocs.apply=true -c "aaa; afl" ./target_binary
-```
-
-> **Note**: Use `aaa` (lowercase), not `-A` (uppercase). `-A` only runs a subset of analysis and may miss functions and cross-references. Always use `-e bin.relocs.apply=true` for PE binaries to resolve imports correctly.
-
-Useful r2 queries:
-
-- `afl` to list discovered functions
-- `afll` or `aflj` for sortable inventories
-- `izz` / `izj` for strings
-- `axt @ <string_addr>` for cross-references from important strings
-- `pdf @ addr` for assembly review
-- `agf @ addr` or `agfj @ addr` for local graph shape
-- `ii` / `iij` for imported functions
-
-### Finding the Main Function
-
-If no symbol table is available, find `main` via string cross-references:
-
-```bash
-# In r2 shell:
-aaa
-# Find usage/help strings (pipe through grep for reliability)
-r2 -q -e bin.relocs.apply=true -c "aaa; iz" ./target_binary | grep -i 'Usage'
-r2 -q -e bin.relocs.apply=true -c "aaa; iz" ./target_binary | grep -i 'help'
-# Cross-reference to find which function uses them
-axt @ <string_addr>
-```
+| Command | Purpose |
+|---------|---------|
+| `afl` / `aflj` | List / JSON-list discovered functions |
+| `izz` / `izj` | Strings |
+| `axt @ <addr>` | Cross-references to address |
+| `pdf @ <addr>` | Disassembly |
+| `agf @ <addr>` | Local graph shape |
+| `ii` / `iij` | Imported functions |
 
 ### What to Produce [MANDATORY OUTPUTS]
 
@@ -356,8 +326,6 @@ Prefer `r2ghidra` through radare2 when available:
 # Open binary once with full analysis
 r2 -q -e bin.relocs.apply=true -c "aaa; pdg @ fcn.1400010a0" ./target_binary
 ```
-
-> **Note**: Use `aaa` (lowercase), not `-A`. See Phase 1 for details.
 
 ### Handling ANSI Color Codes
 
@@ -548,12 +516,6 @@ diff -q <(cd clean/raw && find . -type f | sort) \
 # Should output nothing if structures match
 ```
 
-### What NOT to do in Phase 4
-
-- DO NOT modify the content of files in `clean/raw/` (keep them pristine)
-- DO NOT yet clean files in `clean/src/` (that's Phase 5)
-- DO NOT skip creating both trees
-- DO NOT use different filenames in raw/ vs src/
 
 ### Using Bundled Scripts (Optional)
 
@@ -563,16 +525,7 @@ If project scripts exist and are generic, you may reuse:
 
 Read [references/mapping-format.md](references/mapping-format.md) before using these scripts.
 
-### Verification Checklist
-
-Before proceeding to Phase 5, verify:
-
-- [ ] `clean/raw/` and `clean/src/` have identical directory structure
-- [ ] `clean/raw/` and `clean/src/` have identical filenames
-- [ ] All files in `clean/raw/` are original decompiler output
-- [ ] All files in `clean/src/` are copies (not yet cleaned)
-- [ ] `mapping.tsv` documents all renames
-- [ ] File count matches: `ls clean/raw/**/*.c | wc -l` == `ls clean/src/**/*.c | wc -l`
+Before proceeding to Phase 5, verify both trees have identical structure (Step 4 above) and `mapping.tsv` is complete.
 
 ## Phase 5: AI Cleanup To Equivalent Readable C
 
@@ -582,119 +535,14 @@ Goal: turn raw decompiler output into readable, equivalent C without losing beha
 
 ### Step 1: Create verification script [MANDATORY]
 
-Before starting cleanup, create `scripts/verify_cleanup.sh`:
+Before starting cleanup, copy the template from [references/verify-cleanup-template.sh](references/verify-cleanup-template.sh) to `scripts/verify_cleanup.sh` and make it executable:
 
 ```bash
-#!/bin/bash
-# verify_cleanup.sh - Verify that all files in src/ have been cleaned
-#
-# This script compares clean/raw/ (original decompiler output) with
-# clean/src/ (cleaned code) to ensure:
-# 1. All files exist in both trees
-# 2. Files in src/ are actually cleaned (different from raw/)
-# 3. Files in src/ are not over-aggressively cleaned (not too small)
-
-set -e
-
-RAW_DIR="clean/raw"
-SRC_DIR="clean/src"
-
-echo "=== Cleanup Verification ==="
-echo ""
-
-# Check 1: Verify directory structures match
-echo "Check 1: Verifying directory structures match..."
-DIFF_OUTPUT=$(diff -q <(cd "$RAW_DIR" && find . -type f | sort) \
-                      <(cd "$SRC_DIR" && find . -type f | sort) || true)
-if [ -n "$DIFF_OUTPUT" ]; then
-    echo "❌ FAIL: Directory structures do not match:"
-    echo "$DIFF_OUTPUT"
-    exit 1
-fi
-echo "✅ PASS: Directory structures match"
-echo ""
-
-# Check 2: Count files
-echo "Check 2: Counting files..."
-RAW_COUNT=$(find "$RAW_DIR" -name "*.c" | wc -l)
-SRC_COUNT=$(find "$SRC_DIR" -name "*.c" | wc -l)
-echo "  raw/ files: $RAW_COUNT"
-echo "  src/ files: $SRC_COUNT"
-
-if [ "$RAW_COUNT" -ne "$SRC_COUNT" ]; then
-    echo "❌ FAIL: File count mismatch"
-    exit 1
-fi
-echo "✅ PASS: File counts match ($RAW_COUNT files)"
-echo ""
-
-# Check 3: Verify each file is cleaned (different from raw)
-echo "Check 3: Verifying files are actually cleaned..."
-UNCLEAN_COUNT=0
-TOTAL_SIZE_DIFF=0
-
-while IFS= read -r -d '' RAW_FILE; do
-    # Get relative path
-    REL_PATH="${RAW_FILE#$RAW_DIR/}"
-    SRC_FILE="$SRC_DIR/$REL_PATH"
-
-    if [ ! -f "$SRC_FILE" ]; then
-        echo "❌ FAIL: Missing in src/: $REL_PATH"
-        exit 1
-    fi
-
-    # Check if files are identical (not cleaned)
-    if cmp -s "$RAW_FILE" "$SRC_FILE"; then
-        echo "⚠️  UNCLEANED: $REL_PATH"
-        ((UNCLEAN_COUNT++))
-    else
-        # Files are different, check size difference
-        RAW_SIZE=$(stat -c%s "$RAW_FILE")
-        SRC_SIZE=$(stat -c%s "$SRC_FILE")
-        SIZE_DIFF=$((RAW_SIZE - SRC_SIZE))
-        TOTAL_SIZE_DIFF=$((TOTAL_SIZE_DIFF + SIZE_DIFF))
-
-        # Warn if cleaned file is suspiciously small (< 30% of raw)
-        SIZE_PERCENT=$((SRC_SIZE * 100 / RAW_SIZE))
-        if [ "$SIZE_PERCENT" -lt 30 ]; then
-            echo "⚠️  WARNING: $REL_PATH reduced to ${SIZE_PERCENT}% of original size"
-            echo "    Raw: $RAW_SIZE bytes, Cleaned: $SRC_SIZE bytes"
-        fi
-    fi
-done < <(find "$RAW_DIR" -name "*.c" -print0)
-
-echo ""
-if [ "$UNCLEAN_COUNT" -gt 0 ]; then
-    echo "❌ FAIL: $UNCLEAN_COUNT file(s) not yet cleaned"
-    echo ""
-    echo "Uncleaned files:"
-    while IFS= read -r -d '' RAW_FILE; do
-        REL_PATH="${RAW_FILE#$RAW_DIR/}"
-        SRC_FILE="$SRC_DIR/$REL_PATH"
-        if cmp -s "$RAW_FILE" "$SRC_FILE"; then
-            echo "  - $REL_PATH"
-        fi
-    done < <(find "$RAW_DIR" -name "*.c" -print0)
-    exit 1
-fi
-
-echo "✅ PASS: All files are cleaned (different from raw)"
-echo ""
-
-# Summary statistics
-echo "=== Cleanup Summary ==="
-echo "Total files: $RAW_COUNT"
-echo "Total size reduction: $TOTAL_SIZE_DIFF bytes"
-echo "Average reduction per file: $((TOTAL_SIZE_DIFF / RAW_COUNT)) bytes"
-echo ""
-echo "✅ ALL CHECKS PASSED - Cleanup is complete!"
-exit 0
-```
-
-Make it executable:
-```bash
+cp references/verify-cleanup-template.sh scripts/verify_cleanup.sh
 chmod +x scripts/verify_cleanup.sh
 ```
+
+This script checks: 1) directory structure matches, 2) all files are actually cleaned (differ from raw), 3) no over-aggressive cleanup (<30% of original size).
 
 ### Step 2: Clean files module by module
 
@@ -757,158 +605,19 @@ done
 echo "Phase 5 cleanup complete!"
 ```
 
-### What To Preserve
+### Cleanup Preservation Rules
 
-Always preserve or explicitly re-home:
+Always preserve: status/event strings, error-code mappings, callback types, configuration keys, CLI option names, table-driven converters, protocol verbs, and state transitions.
 
-- status/event strings
-- error-code mappings
-- callback types
-- configuration key names
-- environment variable names
-- CLI option names/help strings
-- table-driven converters
-- protocol verbs and message names
-- session / license / startup / teardown state transitions
+The most common failure: control flow becomes prettier but strings/tables/state branches disappear. If a cleaned file becomes much smaller than the raw one, compare string count, file size, and key literal presence.
 
-### What To Be Careful About
-
-The most common cleanup failure is this:
-
-- control flow becomes prettier
-- but strings/tables/state branches disappear
-
-Whenever a cleaned file becomes much smaller than the raw one, compare:
-
-- string count
-- file size
-- key literal presence
-- error/status code coverage
-
-If the file is a converter or table-heavy module, prefer preserving the original table contents.
-
-### Definition Of Done (Phase 5)
-
-Phase 5 is complete ONLY when ALL of the following are true:
-
-- [ ] `./scripts/verify_cleanup.sh` passes with "ALL CHECKS PASSED"
-- [ ] `clean/src/` is no longer raw decompiler output
-- [ ] Main flows are readable in staged logic
-- [ ] Variable names reflect behavior
-- [ ] Important literals, option names, state branches, and error paths are preserved
-- [ ] Raw outputs remain preserved in `clean/raw/`
-- [ ] No suspicious file size reductions (< 30% of original)
-- [ ] **`docs/project_summary.md` has been generated** [MANDATORY]
+See [references/cleanup-phase.md](references/cleanup-phase.md) for the full anti-pattern list and post-cleanup checks.
 
 ### Generate Project Summary [MANDATORY]
 
-After Phase 5 is complete and verified, you MUST generate `docs/project_summary.md`:
-
-```bash
-# Create docs directory if it doesn't exist
-mkdir -p docs
-
-# Generate comprehensive project summary
-cat > docs/project_summary.md << 'EOF'
-# <Project Name> Reverse Engineering Project Summary
-
-## Project Overview
-[Brief description of what was reverse engineered]
-
-## Binary Information
-- **File**: <path_to_binary>
-- **Type**: ELF/PE, architecture, stripped/unstripped
-- **Total Functions**: N
-- **Application Functions**: N
-- **Modules**: N
-
-## Analysis Workflow
-### Phase 1: Exploratory Analysis
-[Summary of findings]
-
-### Phase 2: Decompilation
-[Number of functions decompiled]
-
-### Phase 3: Module Formation
-[Modules identified and their purposes]
-
-### Phase 4: Renaming and Organization
-[How functions were organized]
-
-### Phase 5: AI Cleanup
-[Cleanup approach and results]
-
-## Architecture
-[High-level architecture description]
-
-## Module Overview
-### Module 1: <name>
-- Purpose
-- Key functions
-- Responsibilities
-
-### Module 2: <name>
-...
-
-## Key Findings
-[Important discoveries about the binary]
-
-## Statistics
-- Total files: N
-- Total lines of code: ~N
-- Modules: N
-- Cleanup reduction: X%
-
-## Deliverables
-1. phase1/function_classification.md
-2. clean/raw/ - Original decompiled code (renamed)
-3. clean/src/ - Cleaned source code
-4. scripts/verify_cleanup.sh
-5. mapping.tsv
-6. docs/project_summary.md
-
-## Quality Assurance
-- All files verified by verify_cleanup.sh
-- No missing strings or logic
-- All original behavior preserved
-
-## Conclusion
-[Summary of project completion]
-EOF
-```
-
-The project summary MUST include:
-1. Binary information and statistics
-2. Phase-by-phase summary of work done
-3. Architecture overview
-4. Module descriptions
-5. Key findings
-6. Deliverables checklist
-7. Quality assurance results
+After Phase 5 is complete, generate `docs/project_summary.md` using the template in [references/project-summary-template.md](references/project-summary-template.md).
 
 ---
-
-## Batch Size Rules
-
-Use these as defaults:
-
-- 1 main module per pass
-- 1-3 root files plus a few direct helpers
-- if a module is huge, split by sub-flow
-
-Good examples:
-
-- startup + config bootstrap
-- session core only
-- metadata loader only
-- launch + teardown only
-- config/service only
-
-Bad examples:
-
-- all `src/**/*.c`
-- all session + launch + storage + config in one prompt
-- all helper renames globally before module analysis
 
 ## Review Standard
 
@@ -924,44 +633,15 @@ Do not declare a module “done” just because it reads better.
 
 ## Definition Of Done
 
-Do not stop at Phase 4.
+Do not stop at Phase 4. A project is complete only when ALL of the following are true:
 
-A cleaned reverse-engineering pass counts as done only when all of the following are true:
+- [ ] `phase1/function_classification.md` exists and is complete
+- [ ] `clean/raw/` and `clean/src/` have identical structure
+- [ ] `./scripts/verify_cleanup.sh` passes with "ALL CHECKS PASSED"
+- [ ] `clean/src/` contains readable staged logic with semantic variable names
+- [ ] Important literals, option names, state branches, and error paths are preserved
+- [ ] Raw outputs remain preserved in `clean/raw/`
+- [ ] No suspicious file size reductions (< 30% of original)
+- [ ] `docs/project_summary.md` exists
 
-- `clean/src/` is no longer raw decompiler output with only renamed files/functions.
-- The main flow is readable in staged logic, with variable names that reflect behavior.
-- Important literals, option names, state branches, and error paths are still present or explicitly re-homed.
-- Raw outputs remain preserved in a backup tree.
-- A post-cleanup comparison has been run and any reported gaps have been reviewed.
-
-## Minimal End-To-End Playbook
-
-1. Check prerequisites (tools installed, r2ghidra working).
-2. Identify the binary (file type). Load platform reference (PE/ELF) and language reference (C++ if applicable).
-3. **C++ only**: Follow RTTI/type recovery steps in [references/cpp-handling.md](references/cpp-handling.md).
-4. **Configure scope** — ask user: application code only (default) or full binary?
-5. Analyze and classify functions — separate library/runtime from application code.
-6. **Generate `phase1/function_classification.md`** [MANDATORY].
-7. Create a phased workspace with `clean/raw/` and `clean/src/` directories.
-8. Export raw C for application functions only (from the classification).
-9. Form modules (or use small binary fast-track).
-10. **Copy files to BOTH `clean/raw/` and `clean/src/`** with renamed filenames.
-11. **Verify both trees have identical structure** (same directories, same filenames).
-12. Create `mapping.tsv` documenting all renames.
-13. Create `scripts/verify_cleanup.sh` verification script.
-14. Clean one module at a time in `clean/src/` ONLY.
-15. **Run `./scripts/verify_cleanup.sh` after each cleanup batch**.
-16. **Iterate until verification passes completely**.
-17. **Generate `docs/project_summary.md`** [MANDATORY].
-18. Final verification: All MANDATORY outputs present.
-
-## Completion Criteria
-
-A module is complete when:
-
-- its main flow is readable
-- raw backups still exist
-- original addresses remain traceable
-- key strings/tables/codes are preserved
-- helper names match real semantics
-- no known critical branches were dropped during abstraction
+A module is complete when: main flow is readable, raw backups exist, original addresses are traceable, key strings/tables/codes are preserved, helper names match real semantics, and no critical branches were dropped.
