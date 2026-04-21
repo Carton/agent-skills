@@ -96,7 +96,7 @@ r2 -q -c "aaa; pdg @ main" /tmp/test_r2 && echo "decompilation works"
 
 Goal: identify the binary shape, main entry chain, probable modules, and the first 20-50 functions worth tracking.
 
-### Binary Identification
+### Binary Identification [MANDATORY]
 
 Start with basic file info and string survey:
 
@@ -106,6 +106,7 @@ strings ./target_binary | grep -iE "(usage|error|main|version|help|\.pdb|\.cpp)"
 ```
 
 **Then load the platform-specific reference:**
+**Do not skip this step even if you have general knowledge of the platform.**
 
 | Detection | Action |
 |-----------|--------|
