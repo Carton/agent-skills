@@ -34,15 +34,26 @@ def load_mapping(mapping_path: Path) -> list[tuple[Path, str]]:
         reader = csv.DictReader(handle, delimiter="\t")
         for row in reader:
             output_path = row.get("output_path") or row.get("input_path")
+            # If original_name is available and starts with fcn., use it. 
+            # Otherwise fall back to address.
+            original_name = (row.get("original_name") or "").strip()
             address = (row.get("address") or "").strip()
-            if output_path and address:
-                results.append((Path(output_path).expanduser(), address))
+            
+            identifier = original_name if original_name.startswith("fcn.") else address
+            
+            if output_path and identifier:
+                results.append((Path(output_path).expanduser(), identifier))
     return results
 
 
-def insert_comment_if_missing(file_path: Path, address: str) -> bool:
+def insert_comment_if_missing(file_path: Path, identifier: str) -> bool:
     text = file_path.read_text(encoding="utf-8")
-    marker = f"// Original address: {address}"
+    # Format: @fcn.HEX_ADDR
+    if identifier.startswith("fcn."):
+        marker = f"// Original address: @{identifier}"
+    else:
+        marker = f"// Original address: {identifier}"
+        
     if marker in text:
         return False
 

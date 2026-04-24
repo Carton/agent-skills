@@ -8,7 +8,7 @@ This phase turns decompiler-shaped C into readable equivalent C.
 - narrow helper names
 - stable constants and event names
 - preserved tables and mappings
-- preserved address provenance in comments where useful
+- preserved address provenance in comments using `@fcn.HEX_ADDR` format
 
 ## Preferred Refactoring Sequence
 
@@ -58,7 +58,7 @@ Common noise patterns produced by r2ghidra (and similar decompilers) when analyz
 | noreturn annotation | `//WARNING: Subroutine does not return` | Convert to `__attribute__((noreturn))` comment or `_Noreturn` |
 | Stack canary check | `*(in_FS_OFFSET + 0x28)` | Delete or mark as `/* stack canary */` |
 | Global variable deref | `*0x00404020`, `obj.0x00404020` | Replace with semantic constant/variable name from analysis |
-| Unresolved function names | `fcn.00401234`, `sub.00401234` | Rename based on call context and string references |
+| Unresolved function names | `fcn.00401234` | Rename based on call context and string references; keep original address as `@fcn.00401234` comment |
 | i18n boilerplate | `setlocale(...)`, `bindtextdomain(...)`, `textdomain(...)` | Collapse to a single comment: `// i18n initialization` |
 | Type casts from void* | `(long *)(void *)var` | Simplify to target type if source semantics are clear |
 | Redundant casts | `(uint64_t)0x1` | Remove if type is already correct |

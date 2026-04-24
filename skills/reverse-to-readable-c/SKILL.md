@@ -495,12 +495,11 @@ Goal: turn raw decompiler output into readable, equivalent C without losing beha
 
 **CRITICAL REQUIREMENT**: This phase MUST include automated verification to ensure ALL files are cleaned. Do NOT rely on manual inspection or AI self-reporting.
 
-### Step 1: Create verification script [MANDATORY]
+### Step 1: Verify verification script [MANDATORY]
 
-Before starting cleanup, copy the template from [references/verify-cleanup-template.sh](references/verify-cleanup-template.sh) to `scripts/verify_cleanup.sh` and make it executable:
+The standard verification script `scripts/verify_cleanup.sh` is automatically provided by `init-project.sh`. Ensure it is executable:
 
 ```bash
-cp references/verify-cleanup-template.sh scripts/verify_cleanup.sh
 chmod +x scripts/verify_cleanup.sh
 ```
 
@@ -524,7 +523,7 @@ Cleanup order inside one module:
 3. split giant functions into readable stages
 4. keep raw constants, status codes, event names, and table data visible
 5. move compiler/runtime junk behind wrappers or out of the application module
-6. **Inject Headers**: Add necessary C header includes (`#include <stdio.h>`, etc.) at the top of the cleaned C file based on the standard library functions used within the code.
+6. **Inject Headers & Traceability**: Add necessary C header includes (`#include <stdio.h>`, etc.) AND the original function address as a comment at the top of the file using the format `@fcn.HEX_ADDR` (e.g., `// Original address: @fcn.00401234`).
 
 **IMPORTANT**: Clean files in `clean/src/` ONLY. Never modify files in `clean/raw/`.
 
@@ -536,7 +535,7 @@ Do not clean all files in the main agent's context. Use sub-agents (e.g., `invok
    ```
    Pass the contents of `/tmp/subagent_prompt.txt` as the **exact** task description to the sub-agent. Do NOT try to summarize or write your own prompt.
 2. **Dynamic Update**: If the sub-agent discovers a new struct or the true purpose of a global variable (listed at the end of its output), the Main Agent MUST update `context/global_map.md` with this new knowledge before spawning the next sub-agent.
-3. **Demand-Driven Decompilation**: As you clean code (e.g., inside `main`), if you discover calls to other unknown functions (like `fcn.0x...`) that represent core business logic, you MUST proactively decompile them. Run `scripts/decompile.sh <target_binary> <fcn_name>` and add these newly discovered functions to `progress.md` as `[TODO]`.
+3. **Demand-Driven Decompilation**: As you clean code (e.g., inside `main`), if you discover calls to other unknown functions (like `fcn.HEX_ADDR`) that represent core business logic, you MUST proactively decompile them. Run `scripts/decompile.sh <target_binary> <fcn_name>` and add these newly discovered functions to `progress.md` as `[TODO]`.
 4. **Update `progress.md`**: Mark the current file as cleaned.
 
 ### Step 4: Verify cleanup completeness [MANDATORY]

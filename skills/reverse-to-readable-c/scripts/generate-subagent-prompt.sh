@@ -38,7 +38,7 @@ $(cat "$RAW_FILE")
 1. **Remove Decompiler Noise**: Remove all Ghidra/decompiler artifacts (e.g., fcn.XXXX, pcVar1, puVar2).
 2. **Context-Aware Renaming**: Use meaningful variable names based on the Global Context and your analysis.
 3. **Preserve Logic**: Preserve ALL string literals, error handling logic, and state transitions. Do not abstract them away.
-4. **Headers**: Add necessary C headers (e.g., #include <stdio.h>) at the top.
+4. **Headers & Traceability**: Add necessary C headers (e.g., #include <stdio.h>) at the top. **MANDATORY**: Add the original function address as a comment at the top of the file using the format `@fcn.HEX_ADDR` (e.g., `// Original address: @fcn.00401234`).
 5. **Output**: Return ONLY the cleaned C code. 
 6. **New Discoveries**: If you discover new types, structs, or global variables that should be added to the global map, list them clearly AFTER the code block.
 EOF

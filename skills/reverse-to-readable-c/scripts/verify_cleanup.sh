@@ -5,8 +5,9 @@
 # clean/src/ (cleaned code) to ensure:
 # 1. All files exist in both trees
 # 2. Files in src/ are actually cleaned (different from raw/)
-# 3. Files in src/ have at least 90% line reduction (as requested by user)
-# 4. Files in src/ do NOT contain Ghidra artifacts (fcn.*, pcVar*, puVar*)
+# 3. Files in src/ have at least 90% line reduction
+# 4. Files in src/ do NOT contain Ghidra artifacts (fcn.HEX_ADDR, pcVar*, puVar*)
+#    Note: Comments starting with @fcn. are preserved for traceability and ignored.
 
 set -e
 
@@ -15,6 +16,7 @@ SRC_DIR="clean/src"
 
 if [ ! -d "$RAW_DIR" ] || [ ! -d "$SRC_DIR" ]; then
     echo "❌ FAIL: Directories '$RAW_DIR' or '$SRC_DIR' do not exist."
+    echo "Please ensure you are running this script from the project root."
     exit 1
 fi
 
@@ -37,6 +39,7 @@ UNCLEAN_COUNT=0
 ARTIFACT_COUNT=0
 SIZE_FAIL_COUNT=0
 TOTAL_FILES=0
+TOTAL_LINES_REDUCED=0
 
 while IFS= read -r -d '' RAW_FILE; do
     REL_PATH="${RAW_FILE#$RAW_DIR/}"
@@ -53,8 +56,9 @@ while IFS= read -r -d '' RAW_FILE; do
     # 2. Size reduction check (90% reduction rule)
     RAW_LINES=$(wc -l < "$RAW_FILE")
     SRC_LINES=$(wc -l < "$SRC_FILE")
-    # If raw is very small (e.g. < 5 lines), 90% might be impossible/meaningless, 
-    # but we follow the rule.
+    TOTAL_LINES_REDUCED=$((TOTAL_LINES_REDUCED + RAW_LINES - SRC_LINES))
+    
+    # 90% reduction rule: cleaned file should be 1/10th the size or less
     THRESHOLD=$((RAW_LINES / 10))
     if [ "$SRC_LINES" -gt "$THRESHOLD" ] && [ "$RAW_LINES" -gt 10 ]; then
         echo "  ⚠️  INSUFFICIENT REDUCTION: $REL_PATH ($SRC_LINES lines, raw had $RAW_LINES. Need <= $THRESHOLD)"
@@ -62,7 +66,8 @@ while IFS= read -r -d '' RAW_FILE; do
     fi
 
     # 3. Artifact check
-    ARTIFACTS=$(grep -E -n 'fcn\.[0-9a-fA-F]+|\b[a-zA-Z]*Var[0-9]+\b|\bunkbyte[0-9]+\b' "$SRC_FILE" || true)
+    # We look for fcn. but ignore those prefixed with @ (traceability comments)
+    ARTIFACTS=$(grep -E -n 'fcn\.[0-9a-fA-F]+|\b[a-zA-Z]*Var[0-9]+\b|\bunkbyte[0-9]+\b' "$SRC_FILE" | grep -v '@fcn\.' || true)
     if [ -n "$ARTIFACTS" ]; then
         echo "  ⚠️  ARTIFACTS FOUND in $REL_PATH:"
         echo "$ARTIFACTS" | head -n 3 | sed 's/^/    /'
@@ -90,5 +95,12 @@ if [ "$FAIL" -eq 1 ]; then
     exit 1
 fi
 
-echo "✅ ALL CHECKS PASSED ($TOTAL_FILES files) - Cleanup is complete!"
+echo "=== Cleanup Summary ==="
+echo "Total files verified: $TOTAL_FILES"
+echo "Total lines removed: $TOTAL_LINES_REDUCED"
+if [ "$TOTAL_FILES" -gt 0 ]; then
+    echo "Average reduction: $((TOTAL_LINES_REDUCED / TOTAL_FILES)) lines/file"
+fi
+echo ""
+echo "✅ ALL CHECKS PASSED - Cleanup is complete!"
 exit 0
