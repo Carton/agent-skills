@@ -10,6 +10,9 @@
 
 set -e
 
+# Get script directory
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
+
 # Check arguments
 if [ $# -lt 1 ]; then
     echo "Usage: $0 <binary_path> [output_dir]" >&2
@@ -28,6 +31,14 @@ fi
 
 # Create workspace directories
 mkdir -p "$OUTPUT_DIR" phase2 clean/raw clean/src context docs scripts
+
+# Copy scripts from skill directory to project directory if they differ
+for script in "$SCRIPT_DIR"/*; do
+    if [ -f "$script" ]; then
+        cp "$script" scripts/
+    fi
+done
+chmod +x scripts/*.sh
 
 echo "=== Quick Binary Analysis ===" 
 echo "Target: $TARGET"
@@ -243,7 +254,7 @@ echo "8/8: Auto-decompiling root functions to phase2/ ..."
 if [ -n "$ROOT_FUNCS" ] && [ -x "scripts/decompile.sh" ]; then
     ./scripts/decompile.sh "$TARGET" $ROOT_FUNCS
 else
-    echo "No root functions found or scripts/decompile.sh not present/executable."
+    echo "No root functions found or scripts/decompile.sh not executable."
 fi
 
 echo ""

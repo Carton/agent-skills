@@ -459,15 +459,35 @@ diff -q <(cd clean/raw && find . -type f | sort) \
 ```
 
 
-### Using Bundled Scripts (Optional)
+### Using Bundled Scripts
 
-If project scripts exist and are generic, you may reuse:
-- `scripts/apply_mapping.py` - Apply renaming from mapping.tsv
-- `scripts/add_address_comments.py` - Add original address comments
+The following scripts automate the mechanical parts of Phase 4 and Phase 5:
 
-Read [references/mapping-format.md](references/mapping-format.md) before using these scripts.
+| Script | Purpose |
+|--------|---------|
+| `scripts/apply-mapping.sh` | **Automates Phase 4**: Creates module directories and moves files from `phase2/` to `clean/raw/` and `clean/src/` based on `mapping.tsv`. |
+| `scripts/add-comments.sh` | Injects original decompiler function addresses as comments into `clean/src/` files to maintain traceability. |
+| `scripts/verify_cleanup.sh` | **Automates Quality Control**: Verifies that all files are cleaned, reduced in size by 90%, and contain no decompiler artifacts. |
 
-Before proceeding to Phase 5, verify both trees have identical structure (Step 4 above) and `mapping.tsv` is complete.
+#### Example: Apply Mapping
+```bash
+# After filling in mapping.tsv (clean_name and module columns):
+scripts/apply-mapping.sh
+```
+
+#### Example: Inject Address Comments
+```bash
+scripts/add-comments.sh
+```
+
+### Developing & Testing Scripts
+
+This skill includes an automated test suite in the `tests/` directory. If you modify any scripts, run the tests to ensure no regressions:
+
+```bash
+# Run all tests using /usr/bin/od as a target
+./tests/run_all.sh
+```
 
 ## Phase 5: AI Cleanup To Equivalent Readable C
 
