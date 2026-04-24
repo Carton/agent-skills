@@ -14,7 +14,7 @@ The workflow is phase-based and aggressively context-limited. Never try to load 
 **Before starting**, run a quick tool check:
 
 ```bash
-check_tools() { which r2 && which file && which python3 && r2 -v | head -1; }; check_tools && echo "OK"
+check_tools () { which r2 && which file && which python3 && r2 -v | head -1; }; check_tools && echo "OK"
 ```
 
 For full installation and troubleshooting, read [references/install-linux.md](references/install-linux.md).
@@ -324,7 +324,7 @@ timeout 60 r2 -q -e scr.color=false -e bin.relocs.apply=true \
 **Batch decompilation with fallback:**
 
 ```bash
-decompile_function() {
+decompile_function () {
     local addr=$1
     local outfile="phase2/func_${addr}.c"
     # Try pdg first, fall back to pdc
@@ -524,16 +524,17 @@ Cleanup order inside one module:
 3. split giant functions into readable stages
 4. keep raw constants, status codes, event names, and table data visible
 5. move compiler/runtime junk behind wrappers or out of the application module
+6. **Inject Headers**: Add necessary C header includes (`#include <stdio.h>`, etc.) at the top of the cleaned C file based on the standard library functions used within the code.
 
 **IMPORTANT**: Clean files in `clean/src/` ONLY. Never modify files in `clean/raw/`.
 
-
-**Sub-Agent Workflow (Crucial for Context Management)**:
+**Sub-Agent Workflow & Demand-Driven Decompilation (Crucial)**:
 Do not clean all files in the main agent's context. Use sub-agents (e.g., `invoke_agent` with a `generalist` or specialized sub-agent) to process each file in isolation.
 1. **Prompt the Sub-Agent**: Provide the contents of `context/global_map.md` AND the raw C code of the **single function/file** to be cleaned.
-2. **Sub-Agent Task**: "Convert this raw C code to readable C. Use the global map for type definitions and function signatures. Return the clean code and any new discoveries."
+2. **Sub-Agent Task**: "Convert this raw C code to readable C. Use the global map for type definitions and function signatures. Return the clean code and any new discoveries. **CRITICAL**: Add necessary C header includes at the top of the cleaned C file."
 3. **Dynamic Update**: If the sub-agent discovers a new struct or the true purpose of a global variable, the Main Agent MUST update `context/global_map.md` with this new knowledge before spawning the next sub-agent.
-4. **Update `progress.md`**: Mark the file as cleaned.
+4. **Demand-Driven Decompilation**: As you clean code (e.g., inside `main`), if you discover calls to other unknown functions (like `fcn.0x...`) that represent core business logic, you MUST proactively decompile them. Run `scripts/decompile.sh <target_binary> <fcn_name>` and add these newly discovered functions to `progress.md` as `[TODO]`.
+5. **Update `progress.md`**: Mark the current file as cleaned.
 
 ### Step 4: Verify cleanup completeness [MANDATORY]
 

@@ -197,14 +197,13 @@ echo "6/6: Generating recommendations..."
 # 7. Generate Workspace Skeletons
 echo "7/8: Generating workspace skeletons (progress.md, mapping.tsv, global_map.md)..."
 
-# Extract local application functions
-LOCAL_FUNCS=$(grep -v 'sym\.imp\.' "$OUTPUT_DIR/all_functions.txt" | grep -v 'entry' | awk '{print $4}' | grep '^fcn\.')
-
 # Generate mapping.tsv
 echo -e "address\toriginal_name\tclean_name\tmodule" > mapping.tsv
-for f in $LOCAL_FUNCS; do
-    addr=$(echo "$f" | grep -oE '[0-9a-f]+$')
-    echo -e "0x$addr\t$f\t[TODO]\t[TODO]" >> mapping.tsv
+grep -v 'sym\.imp\.' "$OUTPUT_DIR/all_functions.txt" \
+    | grep -vE '(entry|_start|__libc_csu|__do_global|deregister_tm_clones|register_tm_clones|frame_dummy)' \
+    | awk '{print $1, $NF}' \
+    | while read -r addr name; do
+    [ -n "$name" ] && echo -e "$addr\t$name\t[TODO]\t[TODO]" >> mapping.tsv
 done
 
 # Generate global_map.md
@@ -226,7 +225,14 @@ EOF
 cat "$OUTPUT_DIR/string_xref.md" >> context/global_map.md
 
 # Generate progress.md
-ROOT_FUNCS=$(grep -oE 'fcn\.[0-9a-f]+' "$OUTPUT_DIR/string_xref.md" 2>/dev/null | sort -u)
+# 1. Get functions referencing key strings (from address: func_name -> string)
+XREF_FUNCS=$(grep -v '^#' "$OUTPUT_DIR/string_xref.md" | awk -F': ' '{print $2}' | awk -F' ->' '{print $1}' | grep -v '^$' | sort -u)
+
+# 2. Get main function explicitly
+MAIN_FUNC=$(grep -E '[[:space:]](sym\.)?main$' "$OUTPUT_DIR/all_functions.txt" | awk '{print $NF}' | head -n 1)
+
+# Combine and unique
+ROOT_FUNCS=$(echo -e "${XREF_FUNCS}\n${MAIN_FUNC}" | grep -vE '^(None|)$' | sort -u)
 
 cat > progress.md << EOF
 # Progress Tracking
@@ -245,8 +251,9 @@ cat > progress.md << EOF
 EOF
 
 for f in $ROOT_FUNCS; do
-    addr=$(echo "$f" | grep -oE '[0-9a-f]+$')
-    echo "| 0x$addr | $f | [TODO] | Raw |" >> progress.md
+    addr=$(grep -w "$f" "$OUTPUT_DIR/all_functions.txt" | awk '{print $1}' | head -n 1)
+    [ -z "$addr" ] && addr="[UNKNOWN]"
+    echo "| $addr | $f | [TODO] | Raw |" >> progress.md
 done
 
 # 8. Batch Decompile Root Functions

@@ -10,7 +10,7 @@ Complete installation and troubleshooting guide for all tools used by the revers
 #!/bin/bash
 # Tool check script - save as check_tools.sh
 
-check_tool() {
+check_tool () {
     if ! command -v $1 &> /dev/null; then
         echo "❌ $1 not found"
         return 1
@@ -56,7 +56,7 @@ rm -f /tmp/test_r2.c /tmp/test_r2
 
 **Quick check** (one-liner):
 ```bash
-check_tools() { which r2 && which file && which python3 && r2 -v | head -1; }; check_tools && echo "✓ Basic tools OK"
+check_tools () { which r2 && which file && which python3 && r2 -v | head -1; }; check_tools && echo "✓ Basic tools OK"
 ```
 
 ## Tooling Setup
