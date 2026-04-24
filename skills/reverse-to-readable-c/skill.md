@@ -544,7 +544,14 @@ chmod +x scripts/verify_cleanup.sh
 
 This script checks: 1) directory structure matches, 2) all files are actually cleaned (differ from raw), 3) no over-aggressive cleanup (<30% of original size).
 
-### Step 2: Clean files module by module
+### Step 2: Initialize Global Context Map [MANDATORY]
+
+To prevent context overflow and attention loss when processing many files, you MUST use a "Map-and-Subagent" strategy:
+
+1. **Create `context/global_map.md`**: Copy the template from `references/global-map-template.md`. Summarize all identified global variables, core data structures (`struct` definitions), and the function call graph (from `mapping.tsv` and Phase 1).
+2. **Keep it lightweight**: Do NOT put entire function bodies in the global map. Only signatures, structs, and confirmed meanings (e.g., `data_0x4010` -> `AppConfig*`).
+
+### Step 3: Clean files module by module (using Sub-Agents)
 
 Read [references/cleanup-phase.md](references/cleanup-phase.md) before doing large cleanup work.
 
@@ -558,7 +565,15 @@ Cleanup order inside one module:
 
 **IMPORTANT**: Clean files in `clean/src/` ONLY. Never modify files in `clean/raw/`.
 
-### Step 3: Verify cleanup completeness [MANDATORY]
+
+**Sub-Agent Workflow (Crucial for Context Management)**:
+Do not clean all files in the main agent's context. Use sub-agents (e.g., `invoke_agent` with a `generalist` or specialized sub-agent) to process each file in isolation.
+1. **Prompt the Sub-Agent**: Provide the contents of `context/global_map.md` AND the raw C code of the **single function/file** to be cleaned.
+2. **Sub-Agent Task**: "Convert this raw C code to readable C. Use the global map for type definitions and function signatures. Return the clean code and any new discoveries."
+3. **Dynamic Update**: If the sub-agent discovers a new struct or the true purpose of a global variable, the Main Agent MUST update `context/global_map.md` with this new knowledge before spawning the next sub-agent.
+4. **Update `progress.md`**: Mark the file as cleaned.
+
+### Step 4: Verify cleanup completeness [MANDATORY]
 
 After cleaning, ALWAYS run the verification script:
 
@@ -591,7 +606,7 @@ After cleaning, ALWAYS run the verification script:
    ```
    → **Action required**: Review the file for missing content
 
-### Step 4: Iterate until complete
+### Step 5: Iterate until complete
 
 **CRITICAL**: Do NOT consider Phase 5 complete until the verification script passes:
 
