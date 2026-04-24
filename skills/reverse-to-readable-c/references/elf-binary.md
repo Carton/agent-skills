@@ -95,11 +95,11 @@ Map these back to the original function names. The extra `flag`/`size` parameter
 
 ```bash
 # For coreutils/glibc programs, source paths reveal the project
-strings ./target_binary | grep -E '\.(c|h)$' | head -20
+grep -E '\.(c|h)$' phase1/all_strings.txt | head -20
 # e.g., "lib/quote.c", "src/cp.c", "gnulib/lib/error.c"
 
 # Identify GNU coreutils version
-strings ./target_binary | grep -i 'coreutils\|GNU\|PACKAGE_VERSION'
+grep -i 'coreutils\|GNU\|PACKAGE_VERSION' phase1/all_strings.txt
 ```
 
 ## ELF-Specific Scope Questions

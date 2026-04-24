@@ -9,7 +9,7 @@ If the binary contains debug information (PDB path in strings or `.debug` sectio
 **Check for PDB availability:**
 ```bash
 # Check if PDB path is embedded in the PE
-strings ./target_binary | grep -i "\.pdb"
+grep -i "\.pdb" phase1/all_strings.txt
 
 # In r2, check debug info
 r2 -q -c "i~pdb" ./target_binary
@@ -70,14 +70,14 @@ When configuring scope for PE binaries, ask these additional questions:
 
 ```bash
 # MSVC C++ runtime wrappers (within the binary, not imports)
-r2 -q -e bin.relocs.apply=true -c "aaa; afl" ./target_binary | grep 'sub\.MSVCP'
-r2 -q -e bin.relocs.apply=true -c "aaa; afl" ./target_binary | grep 'sub\.VCRUNTIME'
-r2 -q -e bin.relocs.apply=true -c "aaa; afl" ./target_binary | grep 'sub\.ucrtbase'
+grep 'sub\.MSVCP' phase1/all_functions.txt
+grep 'sub\.VCRUNTIME' phase1/all_functions.txt
+grep 'sub\.ucrtbase' phase1/all_functions.txt
 
 # STL / exception handling patterns
-r2 -q -e bin.relocs.apply=true -c "aaa; afl" ./target_binary | grep -i 'exception'
-r2 -q -e bin.relocs.apply=true -c "aaa; afl" ./target_binary | grep -i 'locale'
+grep -i 'exception' phase1/all_functions.txt
+grep -i 'locale' phase1/all_functions.txt
 
 # Named STL methods
-r2 -q -e bin.relocs.apply=true -c "aaa; afl" ./target_binary | grep 'method\.std::'
+grep 'method\.std::' phase1/all_functions.txt
 ```
