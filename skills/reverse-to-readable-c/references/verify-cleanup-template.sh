@@ -47,10 +47,12 @@ fi
 echo "✅ PASS: File counts match ($RAW_COUNT files)"
 echo ""
 
-# Check 3: Verify each file is cleaned (different from raw)
-echo "Check 3: Verifying files are actually cleaned..."
+# Check 3: Verify each file is fully cleaned
+echo "Check 3: Verifying files are fully cleaned..."
 UNCLEAN_COUNT=0
-TOTAL_SIZE_DIFF=0
+INSUFFICIENT_REDUCTION_COUNT=0
+GHIDRA_ARTIFACTS_COUNT=0
+TOTAL_LINES_REDUCED=0
 
 while IFS= read -r -d '' RAW_FILE; do
     # Get relative path
@@ -64,27 +66,42 @@ while IFS= read -r -d '' RAW_FILE; do
 
     # Check if files are identical (not cleaned)
     if cmp -s "$RAW_FILE" "$SRC_FILE"; then
-        # echo "⚠️  UNCLEANED: $REL_PATH"
         UNCLEAN_COUNT=$((UNCLEAN_COUNT + 1))
     else
-        # Files are different, check size difference
-        RAW_SIZE=$(stat -c%s "$RAW_FILE")
-        SRC_SIZE=$(stat -c%s "$SRC_FILE")
-        SIZE_DIFF=$((RAW_SIZE - SRC_SIZE))
-        TOTAL_SIZE_DIFF=$((TOTAL_SIZE_DIFF + SIZE_DIFF))
+        # Files are different, check lines of code reduction
+        RAW_LINES=$(wc -l < "$RAW_FILE")
+        SRC_LINES=$(wc -l < "$SRC_FILE")
+        
+        # Prevent division by zero
+        if [ "$RAW_LINES" -gt 0 ]; then
+            REDUCTION_PERCENT=$(( (RAW_LINES - SRC_LINES) * 100 / RAW_LINES ))
+        else
+            REDUCTION_PERCENT=0
+        fi
 
-        # Warn if cleaned file is suspiciously small (< 30% of raw)
-        SIZE_PERCENT=$((SRC_SIZE * 100 / RAW_SIZE))
-        if [ "$SIZE_PERCENT" -lt 30 ]; then
-            echo "⚠️  WARNING: $REL_PATH reduced to ${SIZE_PERCENT}% of original size"
-            echo "    Raw: $RAW_SIZE bytes, Cleaned: $SRC_SIZE bytes"
+        TOTAL_LINES_REDUCED=$((TOTAL_LINES_REDUCED + RAW_LINES - SRC_LINES))
+
+        # Must reduce by at least 90%
+        if [ "$REDUCTION_PERCENT" -lt 90 ]; then
+            echo "⚠️  INSUFFICIENT REDUCTION: $REL_PATH reduced by only ${REDUCTION_PERCENT}% (Raw: $RAW_LINES lines, Cleaned: $SRC_LINES lines. Expected >= 90%)"
+            INSUFFICIENT_REDUCTION_COUNT=$((INSUFFICIENT_REDUCTION_COUNT + 1))
+        fi
+        
+        # Check for Ghidra artifacts (fcn.XXXX, pcVar, puVar, unkbyte, etc)
+        ARTIFACTS=$(grep -E -n 'fcn\.[0-9a-fA-F]+|\b[a-zA-Z]*Var[0-9]+\b|\bunkbyte[0-9]+\b' "$SRC_FILE" || true)
+        if [ -n "$ARTIFACTS" ]; then
+            echo "⚠️  GHIDRA ARTIFACTS FOUND in $REL_PATH:"
+            echo "$ARTIFACTS" | sed 's/^/    /'
+            GHIDRA_ARTIFACTS_COUNT=$((GHIDRA_ARTIFACTS_COUNT + 1))
         fi
     fi
 done < <(find "$RAW_DIR" -name "*.c" -print0)
 
 echo ""
+FAIL=0
+
 if [ "$UNCLEAN_COUNT" -gt 0 ]; then
-    echo "❌ FAIL: $UNCLEAN_COUNT file(s) not yet cleaned"
+    echo "❌ FAIL: $UNCLEAN_COUNT file(s) identical to raw (not cleaned)"
     echo ""
     echo "Uncleaned files:"
     while IFS= read -r -d '' RAW_FILE; do
@@ -94,17 +111,33 @@ if [ "$UNCLEAN_COUNT" -gt 0 ]; then
             echo "  - $REL_PATH"
         fi
     done < <(find "$RAW_DIR" -name "*.c" -print0)
+    FAIL=1
+fi
+
+if [ "$INSUFFICIENT_REDUCTION_COUNT" -gt 0 ]; then
+    echo "❌ FAIL: $INSUFFICIENT_REDUCTION_COUNT file(s) did not meet the 90% size reduction requirement."
+    FAIL=1
+fi
+
+if [ "$GHIDRA_ARTIFACTS_COUNT" -gt 0 ]; then
+    echo "❌ FAIL: $GHIDRA_ARTIFACTS_COUNT file(s) still contain Ghidra artifacts (e.g., fcn.XXXX, pcVar1, unkbyte)."
+    FAIL=1
+fi
+
+if [ "$FAIL" -eq 1 ]; then
     exit 1
 fi
 
-echo "✅ PASS: All files are cleaned (different from raw)"
+echo "✅ PASS: All files are cleaned (sufficiently reduced and no Ghidra artifacts)"
 echo ""
 
 # Summary statistics
 echo "=== Cleanup Summary ==="
 echo "Total files: $RAW_COUNT"
-echo "Total size reduction: $TOTAL_SIZE_DIFF bytes"
-echo "Average reduction per file: $((TOTAL_SIZE_DIFF / RAW_COUNT)) bytes"
+echo "Total lines reduced: $TOTAL_LINES_REDUCED lines"
+if [ "$RAW_COUNT" -gt 0 ]; then
+    echo "Average line reduction per file: $((TOTAL_LINES_REDUCED / RAW_COUNT)) lines"
+fi
 echo ""
 echo "✅ ALL CHECKS PASSED - Cleanup is complete!"
 exit 0
