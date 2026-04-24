@@ -148,20 +148,17 @@ Goal: identify the binary shape, main entry chain, probable modules, and the fir
 
 ```bash
 # Run from your project directory
-scripts/quick-analyze.sh /path/to/binary phase1
+scripts/init-project.sh /path/to/binary phase1
 
 # Example
-scripts/quick-analyze.sh /usr/bin/od phase1
+scripts/init-project.sh /usr/bin/od phase1
 ```
 
-This single command generates all Phase 1 outputs:
-- `phase1/basic_info.txt` - Binary type and sections
-- `phase1/all_functions.txt` - Complete function list
-- `phase1/function_classification.md` - Categorized functions
-- `phase1/key_strings.md` - Important string literals
-- `phase1/string_xref.md` - String to function cross-references
-- `phase1/imports_summary.md` - Library dependencies
-- `phase1/next_steps.md` - Recommended decompilation targets
+This single command bootstraps the entire workspace:
+- Creates standard directories (`phase1/`, `phase2/`, `clean/raw/`, `clean/src/`, `context/`, `docs/`)
+- Generates skeletons for `mapping.tsv`, `progress.md`, and `context/global_map.md`
+- Generates all Phase 1 analysis outputs (`phase1/all_functions.txt`, `phase1/key_strings.md`, etc.)
+- **Auto-decompiles** suspected root functions directly into the `phase2/` directory!
 
 **Then load the platform-specific reference:**
 **Do not skip this step even if you have general knowledge of the platform.**
@@ -334,9 +331,11 @@ Goal: export initial C-like code for only the functions needed for the current m
 
 Prefer `r2ghidra` through radare2 when available:
 
+> **Note**: `init-project.sh` already auto-decompiles the most likely root functions into `phase2/` based on key string references! For additional functions, you can use the bundled batch script:
+
 ```bash
-# Open binary once with full analysis
-r2 -q -e bin.relocs.apply=true -c "aaa; pdg @ fcn.1400010a0" ./target_binary
+# Decompile one or more functions
+scripts/decompile.sh ./target_binary fcn.1400010a0 fcn.1400020b0
 ```
 
 ### Handling ANSI Color Codes

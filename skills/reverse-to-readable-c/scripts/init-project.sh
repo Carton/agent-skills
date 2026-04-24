@@ -1,11 +1,12 @@
 #!/bin/bash
-# quick-analyze.sh - Fast binary analysis for reverse-to-readable-c skill
+# init-project.sh - Fast binary analysis and workspace bootstrap for reverse-to-readable-c skill
 # 
 # This script performs all Phase 1 analysis in a single pass, avoiding
-# repeated r2 invocations and collecting all necessary information.
+# repeated r2 invocations, collecting all necessary information, and
+# bootstrapping the standard workspace (directories, skeletons, auto-decompilation).
 #
-# Usage: ./quick-analyze.sh <binary_path> [output_dir]
-# Example: ./quick-analyze.sh /usr/bin/od analysis_output
+# Usage: ./init-project.sh <binary_path> [output_dir]
+# Example: ./init-project.sh /usr/bin/od phase1
 
 set -e
 
@@ -25,8 +26,8 @@ if [ ! -f "$TARGET" ]; then
     exit 1
 fi
 
-# Create output directory
-mkdir -p "$OUTPUT_DIR"
+# Create workspace directories
+mkdir -p "$OUTPUT_DIR" phase2 clean/raw clean/src context docs scripts
 
 echo "=== Quick Binary Analysis ===" 
 echo "Target: $TARGET"
@@ -56,6 +57,7 @@ aaa
 afl > $OUTPUT_DIR/all_functions.txt
 iz > $OUTPUT_DIR/all_strings.txt
 axtj @@ str.* > $OUTPUT_DIR/all_xrefs.json
+ts > $OUTPUT_DIR/types.h
 EOF
 
 r2 -q -e bin.relocs.apply=true -i "$OUTPUT_DIR/analyze.r2" "$TARGET" 2>/dev/null
@@ -181,8 +183,71 @@ echo "6/6: Generating recommendations..."
     echo "done"
 } > "$OUTPUT_DIR/next_steps.md"
 
+# 7. Generate Workspace Skeletons
+echo "7/8: Generating workspace skeletons (progress.md, mapping.tsv, global_map.md)..."
+
+# Extract local application functions
+LOCAL_FUNCS=$(grep -v 'sym\.imp\.' "$OUTPUT_DIR/all_functions.txt" | grep -v 'entry' | awk '{print $4}' | grep '^fcn\.')
+
+# Generate mapping.tsv
+echo -e "address\toriginal_name\tclean_name\tmodule" > mapping.tsv
+for f in $LOCAL_FUNCS; do
+    addr=$(echo "$f" | grep -oE '[0-9a-f]+$')
+    echo -e "0x$addr\t$f\t[TODO]\t[TODO]" >> mapping.tsv
+done
+
+# Generate global_map.md
+cat > context/global_map.md << 'EOF'
+# Global Context Map
+
+## Identified Modules
+- core
+- (Add others based on Phase 1 classification)
+
+## Global State / Config
+- (TODO: Add suspected global structs or state variables)
+
+## Key Data Types (from phase1/types.h)
+- (TODO)
+
+## Strings of Interest
+EOF
+cat "$OUTPUT_DIR/string_xref.md" >> context/global_map.md
+
+# Generate progress.md
+ROOT_FUNCS=$(grep -oE 'fcn\.[0-9a-f]+' "$OUTPUT_DIR/string_xref.md" 2>/dev/null | sort -u)
+
+cat > progress.md << EOF
+# Progress Tracking
+
+**Project Goal**: Reverse engineering
+**Current Phase**: Phase 2 (Raw Decompilation) / Phase 4 (Renaming)
+
+## Next Steps
+1. Review \`phase1/function_classification.md\` and \`context/global_map.md\`.
+2. Clean the root functions listed below.
+
+## Functions Analysed
+
+| Address | Raw Name | Clean Name | Status |
+|---------|----------|------------|--------|
+EOF
+
+for f in $ROOT_FUNCS; do
+    addr=$(echo "$f" | grep -oE '[0-9a-f]+$')
+    echo "| 0x$addr | $f | [TODO] | Raw |" >> progress.md
+done
+
+# 8. Batch Decompile Root Functions
+echo "8/8: Auto-decompiling root functions to phase2/ ..."
+if [ -n "$ROOT_FUNCS" ] && [ -x "scripts/decompile.sh" ]; then
+    ./scripts/decompile.sh "$TARGET" $ROOT_FUNCS
+else
+    echo "No root functions found or scripts/decompile.sh not present/executable."
+fi
+
 echo ""
-echo "✅ Analysis complete!"
+echo "✅ Analysis & Bootstrap complete!"
 echo ""
 echo "Generated files:"
 ls -lh "$OUTPUT_DIR"/*.txt "$OUTPUT_DIR"/*.md 2>/dev/null | awk '{print "  " $9 " (" $5 ")"}'
