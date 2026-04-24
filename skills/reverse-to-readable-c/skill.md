@@ -142,14 +142,26 @@ r2 -q -c "aaa; pdg @ main" /tmp/test_r2 && echo "decompilation works"
 
 Goal: identify the binary shape, main entry chain, probable modules, and the first 20-50 functions worth tracking.
 
-### Binary Identification [MANDATORY]
+### Quick Start [MANDATORY]
 
-Start with basic file info and string survey:
+**Use the bundled analysis script for fast, automated Phase 1 analysis:**
 
 ```bash
-file ./target_binary
-strings ./target_binary | grep -iE "(usage|error|main|version|help|\.pdb|\.cpp)" | head -30
+# Run from your project directory
+scripts/quick-analyze.sh /path/to/binary phase1
+
+# Example
+scripts/quick-analyze.sh /usr/bin/od phase1
 ```
+
+This single command generates all Phase 1 outputs:
+- `phase1/basic_info.txt` - Binary type and sections
+- `phase1/all_functions.txt` - Complete function list
+- `phase1/function_classification.md` - Categorized functions
+- `phase1/key_strings.md` - Important string literals
+- `phase1/string_xref.md` - String to function cross-references
+- `phase1/imports_summary.md` - Library dependencies
+- `phase1/next_steps.md` - Recommended decompilation targets
 
 **Then load the platform-specific reference:**
 **Do not skip this step even if you have general knowledge of the platform.**

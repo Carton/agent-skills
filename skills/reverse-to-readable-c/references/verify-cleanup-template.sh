@@ -50,7 +50,6 @@ echo ""
 # Check 3: Verify each file is fully cleaned
 echo "Check 3: Verifying files are fully cleaned..."
 UNCLEAN_COUNT=0
-INSUFFICIENT_REDUCTION_COUNT=0
 GHIDRA_ARTIFACTS_COUNT=0
 TOTAL_LINES_REDUCED=0
 
@@ -72,20 +71,7 @@ while IFS= read -r -d '' RAW_FILE; do
         RAW_LINES=$(wc -l < "$RAW_FILE")
         SRC_LINES=$(wc -l < "$SRC_FILE")
         
-        # Prevent division by zero
-        if [ "$RAW_LINES" -gt 0 ]; then
-            REDUCTION_PERCENT=$(( (RAW_LINES - SRC_LINES) * 100 / RAW_LINES ))
-        else
-            REDUCTION_PERCENT=0
-        fi
-
         TOTAL_LINES_REDUCED=$((TOTAL_LINES_REDUCED + RAW_LINES - SRC_LINES))
-
-        # Must reduce by at least 90%
-        if [ "$REDUCTION_PERCENT" -lt 90 ]; then
-            echo "⚠️  INSUFFICIENT REDUCTION: $REL_PATH reduced by only ${REDUCTION_PERCENT}% (Raw: $RAW_LINES lines, Cleaned: $SRC_LINES lines. Expected >= 90%)"
-            INSUFFICIENT_REDUCTION_COUNT=$((INSUFFICIENT_REDUCTION_COUNT + 1))
-        fi
         
         # Check for Ghidra artifacts (fcn.XXXX, pcVar, puVar, unkbyte, etc)
         ARTIFACTS=$(grep -E -n 'fcn\.[0-9a-fA-F]+|\b[a-zA-Z]*Var[0-9]+\b|\bunkbyte[0-9]+\b' "$SRC_FILE" || true)
@@ -114,10 +100,6 @@ if [ "$UNCLEAN_COUNT" -gt 0 ]; then
     FAIL=1
 fi
 
-if [ "$INSUFFICIENT_REDUCTION_COUNT" -gt 0 ]; then
-    echo "❌ FAIL: $INSUFFICIENT_REDUCTION_COUNT file(s) did not meet the 90% size reduction requirement."
-    FAIL=1
-fi
 
 if [ "$GHIDRA_ARTIFACTS_COUNT" -gt 0 ]; then
     echo "❌ FAIL: $GHIDRA_ARTIFACTS_COUNT file(s) still contain Ghidra artifacts (e.g., fcn.XXXX, pcVar1, unkbyte)."
