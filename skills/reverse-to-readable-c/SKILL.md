@@ -530,11 +530,14 @@ Cleanup order inside one module:
 
 **Sub-Agent Workflow & Demand-Driven Decompilation (Crucial)**:
 Do not clean all files in the main agent's context. Use sub-agents (e.g., `invoke_agent` with a `generalist` or specialized sub-agent) to process each file in isolation.
-1. **Prompt the Sub-Agent**: Provide the contents of `context/global_map.md` AND the raw C code of the **single function/file** to be cleaned.
-2. **Sub-Agent Task**: "Convert this raw C code to readable C. Use the global map for type definitions and function signatures. Return the clean code and any new discoveries. **CRITICAL**: Add necessary C header includes at the top of the cleaned C file."
-3. **Dynamic Update**: If the sub-agent discovers a new struct or the true purpose of a global variable, the Main Agent MUST update `context/global_map.md` with this new knowledge before spawning the next sub-agent.
-4. **Demand-Driven Decompilation**: As you clean code (e.g., inside `main`), if you discover calls to other unknown functions (like `fcn.0x...`) that represent core business logic, you MUST proactively decompile them. Run `scripts/decompile.sh <target_binary> <fcn_name>` and add these newly discovered functions to `progress.md` as `[TODO]`.
-5. **Update `progress.md`**: Mark the current file as cleaned.
+1. **Prompt the Sub-Agent [MANDATORY]**: You MUST use the provided script to generate the exact prompt for the sub-agent. This ensures the global context is forcefully injected.
+   ```bash
+   ./scripts/generate-subagent-prompt.sh clean/raw/module/file.c > /tmp/subagent_prompt.txt
+   ```
+   Pass the contents of `/tmp/subagent_prompt.txt` as the **exact** task description to the sub-agent. Do NOT try to summarize or write your own prompt.
+2. **Dynamic Update**: If the sub-agent discovers a new struct or the true purpose of a global variable (listed at the end of its output), the Main Agent MUST update `context/global_map.md` with this new knowledge before spawning the next sub-agent.
+3. **Demand-Driven Decompilation**: As you clean code (e.g., inside `main`), if you discover calls to other unknown functions (like `fcn.0x...`) that represent core business logic, you MUST proactively decompile them. Run `scripts/decompile.sh <target_binary> <fcn_name>` and add these newly discovered functions to `progress.md` as `[TODO]`.
+4. **Update `progress.md`**: Mark the current file as cleaned.
 
 ### Step 4: Verify cleanup completeness [MANDATORY]
 
