@@ -11,13 +11,13 @@ The workflow is phase-based and aggressively context-limited. Never try to load 
 
 ## Prerequisites Check
 
-**Before starting**, run a quick tool check:
+**Before starting**, ensure core tools are available:
 
 ```bash
-function check_tools { which r2 && which file && which python3 && r2 -v | head -1; }; check_tools && echo "OK"
+which r2 file python3 && r2 -v | head -1
 ```
 
-For full installation and troubleshooting, read [references/install-linux.md](references/install-linux.md).
+For full installation details, see [references/install-linux.md](references/install-linux.md).
 
 ---
 
@@ -125,12 +125,13 @@ If the repository already has a structure, preserve it and fit the workflow into
 
 ## Tooling Setup
 
-See [references/install-linux.md](references/install-linux.md) for installation, r2ghidra setup, and target-specific optional tools (Ghidra, wine, etc.).
-
-Quick verify after install:
+Quick install for Linux:
 ```bash
-r2 -q -c "aaa; pdg @ main" /tmp/test_r2 && echo "decompilation works"
+apt install radare2 binutils python3 file jq
+r2pm -ci r2ghidra
 ```
+
+For more details, see [references/install-linux.md](references/install-linux.md).
 
 ---
 
