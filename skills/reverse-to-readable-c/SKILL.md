@@ -373,49 +373,33 @@ Export order:
 3. converters / tables / callback helpers
 4. generic runtime noise only if it blocks understanding
 
-## Phase 3: Module Formation
+## Phase 3: Module Formation & Architecture Blueprinting [CRITICAL]
 
-Goal: convert an address bag into a module map.
+Goal: Design a professional source tree structure and map every application function to its logical home. **Do not jump straight to renaming; design the architecture first.**
 
-### Small Binary Fast-Track
+### Step 1: Create the Architecture Blueprint
+Before modifying `mapping.tsv`, you MUST create a blueprint in `docs/architecture_blueprint.md`.
+1. **Copy Template**: `cp references/architecture-blueprint-template.md docs/architecture_blueprint.md`
+2. **Design the Tree**: Decide on a professional directory structure (e.g., `core/`, `net/`, `util/`).
+3. **Identify Anchors**: Use `phase1/callgraph_summary.md` and `phase1/key_strings.md` to find "Anchor Functions" for each module:
+   - **String Anchors**: Functions referencing "Login", "Connect", "Error" strings.
+   - **System Anchors**: Functions calling `socket`, `CreateWindow`, or `malloc`.
+   - **Topological Anchors**: Highly-connected nodes in the call graph summary.
 
-For simple utilities (single-purpose CLI tools, <50 real functions), skip formal module formation:
+### Step 2: Map Neighborhoods
+For each anchor function, look at its direct callers and callees in the call graph. These "neighbors" almost always belong in the same directory. Group them logically in your blueprint.
 
-1. Identify the 1-3 core business functions (via string references from Phase 1)
-2. Decompile only those + their direct helpers
-3. Go directly to Phase 5 cleanup
+### Step 3: Populate mapping.tsv
+Once the blueprint is designed:
+1. Update `mapping.tsv`'s `module` and `clean_name` columns to match the blueprint.
+2. **Anti-Leak Check**: Verify that every non-skipped application function has been assigned a module.
 
-Use this heuristic: if the program has a clear single-purpose `Usage:` string and fewer than 20 application-level functions (excluding runtime/STL), treat it as a small binary.
-
-### Full Module Formation
-
-For larger binaries, group functions by real behavior, not by decompiler order.
-
-Typical buckets:
-
-- `app/core`
-- `app/session`
-- `app/network`
-- `app/config`
-- `app/service`
-- `app/storage`
-- `app/cli`
-- `platform`
-- `runtime`
-- `thirdparty`
-
-Heuristics:
-
-- shared application strings imply a module
-- call-graph neighborhoods imply a module
-- platform/process/network/CLI code should not be mixed with session logic
-- compiler/runtime support should be isolated from application logic
-
-Keep address provenance in docs even after grouping.
+> [!IMPORTANT]
+> The Architecture Blueprint is your **Map**. It ensures that even if you interrupt the project, you (or a future agent) will understand the overall program design and where new functions belong.
 
 ## Phase 4: Mechanical Renaming and Annotation
 
-Goal: reduce noise before semantic cleanup by organizing code into modules and applying meaningful names.
+Goal: Execute the design from the Architecture Blueprint by organizing code into modules and applying meaningful names.
 
 ### Critical: Understanding raw/ vs src/
 

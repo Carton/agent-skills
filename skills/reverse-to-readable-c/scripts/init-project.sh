@@ -207,6 +207,10 @@ fi
 # 8. Generate Workspace Skeletons
 echo "8/8: Generating workspace skeletons (progress.md, mapping.tsv, global_map.md)..."
 
+# Create architecture blueprint placeholder
+cp "$SCRIPT_DIR/../references/architecture-blueprint-template.md" docs/architecture_blueprint.md
+echo "TODO: Design architecture in this file before Phase 4" >> docs/architecture_blueprint.md
+
 # Generate mapping.tsv
 echo -e "address\toriginal_name\tclean_name\tmodule" > mapping.tsv
 grep -v 'sym\.imp\.' "$OUTPUT_DIR/all_functions.txt" \
