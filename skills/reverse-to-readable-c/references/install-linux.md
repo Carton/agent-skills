@@ -89,7 +89,7 @@ r2pm -ci r2ghidra
 # 2. Build and install (IMPORTANT: must be done manually)
 cd ~/.local/share/radare2/r2pm/git/r2ghidra
 make
-sudo make install
+make install
 
 # 3. Verify installation
 r2 -q -c "pdg --help" # requires a file to be opened, see verification below
