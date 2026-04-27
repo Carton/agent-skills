@@ -494,7 +494,7 @@ The following scripts automate the mechanical parts of Phase 4 and Phase 5:
 |--------|---------|
 | `scripts/apply-mapping.sh` | **Automates Phase 4**: Creates module directories and moves files from `phase2/` to `clean/raw/` and `clean/src/` based on `mapping.tsv`. |
 | `scripts/add-comments.sh` | Injects original decompiler function addresses as comments into `clean/src/` files to maintain traceability. |
-| `scripts/verify_cleanup.sh` | **Automates Quality Control**: Verifies that all files are cleaned, reduced in size by 90%, and contain no decompiler artifacts. |
+| `scripts/verify_cleanup.sh` | **Automates Quality Control**: Verifies that all files are cleaned and contain no decompiler artifacts. |
 
 #### Example: Apply Mapping
 ```bash
@@ -530,7 +530,7 @@ The standard verification script `scripts/verify_cleanup.sh` is automatically pr
 chmod +x scripts/verify_cleanup.sh
 ```
 
-This script checks: 1) directory structure matches, 2) all files are actually cleaned (differ from raw), 3) no over-aggressive cleanup (<30% of original size).
+This script checks: 1) directory structure matches, 2) all files are actually cleaned (differ from raw), 3) no remaining decompiler artifacts.
 
 ### Step 2: Update Global Context Map [MANDATORY]
 

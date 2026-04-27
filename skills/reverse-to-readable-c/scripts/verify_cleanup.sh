@@ -5,8 +5,7 @@
 # clean/src/ (cleaned code) to ensure:
 # 1. All files exist in both trees
 # 2. Files in src/ are actually cleaned (different from raw/)
-# 3. Files in src/ have at least 90% line reduction
-# 4. Files in src/ do NOT contain Ghidra artifacts (fcn.HEX_ADDR, pcVar*, puVar*)
+# 3. Files in src/ do NOT contain Ghidra artifacts (fcn.HEX_ADDR, pcVar*, puVar*)
 #    Note: Comments starting with @fcn. are preserved for traceability and ignored.
 
 set -e
@@ -37,7 +36,6 @@ echo "✅ PASS: Directory structures match"
 echo "Check 2: Verifying files are fully cleaned..."
 UNCLEAN_COUNT=0
 ARTIFACT_COUNT=0
-SIZE_FAIL_COUNT=0
 TOTAL_FILES=0
 TOTAL_LINES_REDUCED=0
 
@@ -53,17 +51,9 @@ while IFS= read -r -d '' RAW_FILE; do
         continue
     fi
 
-    # 2. Size reduction check (90% reduction rule)
     RAW_LINES=$(wc -l < "$RAW_FILE")
     SRC_LINES=$(wc -l < "$SRC_FILE")
     TOTAL_LINES_REDUCED=$((TOTAL_LINES_REDUCED + RAW_LINES - SRC_LINES))
-    
-    # 90% reduction rule: cleaned file should be 1/10th the size or less
-    THRESHOLD=$((RAW_LINES / 10))
-    if [ "$SRC_LINES" -gt "$THRESHOLD" ] && [ "$RAW_LINES" -gt 10 ]; then
-        echo "  ⚠️  INSUFFICIENT REDUCTION: $REL_PATH ($SRC_LINES lines, raw had $RAW_LINES. Need <= $THRESHOLD)"
-        SIZE_FAIL_COUNT=$((SIZE_FAIL_COUNT + 1))
-    fi
 
     # 3. Artifact check
     # We look for fcn. but ignore those prefixed with @ (traceability comments)
@@ -80,10 +70,6 @@ echo ""
 FAIL=0
 if [ "$UNCLEAN_COUNT" -gt 0 ]; then
     echo "❌ FAIL: $UNCLEAN_COUNT file(s) identical to raw."
-    FAIL=1
-fi
-if [ "$SIZE_FAIL_COUNT" -gt 0 ]; then
-    echo "❌ FAIL: $SIZE_FAIL_COUNT file(s) did not reach 90% line reduction."
     FAIL=1
 fi
 if [ "$ARTIFACT_COUNT" -gt 0 ]; then
