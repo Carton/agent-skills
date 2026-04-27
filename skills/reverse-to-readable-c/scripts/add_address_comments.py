@@ -34,6 +34,13 @@ def load_mapping(mapping_path: Path) -> list[tuple[Path, str]]:
         reader = csv.DictReader(handle, delimiter="\t")
         for row in reader:
             output_path = row.get("output_path") or row.get("input_path")
+            clean_name = (row.get("clean_name") or "").strip()
+            module = (row.get("module") or "").strip()
+            
+            # Construct output_path dynamically if clean_name and module are provided
+            if not output_path and clean_name and clean_name != "[TODO]" and module and module != "[TODO]":
+                output_path = f"clean/src/{module}/{clean_name}.c"
+
             # If original_name is available and starts with fcn., use it. 
             # Otherwise fall back to address.
             original_name = (row.get("original_name") or "").strip()
