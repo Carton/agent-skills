@@ -68,6 +68,7 @@ aaa
 afl > $OUTPUT_DIR/all_functions.txt
 iz > $OUTPUT_DIR/all_strings.txt
 axtj @@ str.* > $OUTPUT_DIR/all_xrefs.json
+agCj > $OUTPUT_DIR/callgraph.json
 ts > $OUTPUT_DIR/types.h
 EOF
 
@@ -75,9 +76,9 @@ r2 -q -e bin.relocs.apply=true -i "$OUTPUT_DIR/analyze.r2" "$TARGET" 2>/dev/null
 
 
 # Count and classify functions
-TOTAL=$(wc -l < "$OUTPUT_DIR/all_functions.txt")
-IMPORTS=$(grep -c 'sym\.imp\.' "$OUTPUT_DIR/all_functions.txt" || echo 0)
-LOCAL=$(grep -v 'sym\.imp\.' "$OUTPUT_DIR/all_functions.txt" | grep -v 'entry' | wc -l)
+TOTAL=$(wc -l < "$OUTPUT_DIR/all_functions.txt" | tr -d ' ')
+IMPORTS=$(grep 'sym\.imp\.' "$OUTPUT_DIR/all_functions.txt" | wc -l | tr -d ' ')
+LOCAL=$(grep -v 'sym\.imp\.' "$OUTPUT_DIR/all_functions.txt" | grep -v 'entry' | wc -l | tr -d ' ')
 
 {
     echo "# Function Classification"
@@ -194,8 +195,17 @@ echo "6/6: Generating recommendations..."
     echo "done"
 } > "$OUTPUT_DIR/next_steps.md"
 
-# 7. Generate Workspace Skeletons
-echo "7/8: Generating workspace skeletons (progress.md, mapping.tsv, global_map.md)..."
+# 7. Analyze Callgraph for AI Classification
+echo "7/8: Analyzing callgraph for AI classification..."
+if [ -f "scripts/analyze_callgraph.py" ] && [ -f "$OUTPUT_DIR/callgraph.json" ]; then
+    python3 scripts/analyze_callgraph.py "$OUTPUT_DIR/callgraph.json" "$OUTPUT_DIR/callgraph_summary.md"
+else
+    echo "Warning: scripts/analyze_callgraph.py or callgraph.json not found."
+    echo "Please run agCj > $OUTPUT_DIR/callgraph.json manually."
+fi
+
+# 8. Generate Workspace Skeletons
+echo "8/8: Generating workspace skeletons (progress.md, mapping.tsv, global_map.md)..."
 
 # Generate mapping.tsv
 echo -e "address\toriginal_name\tclean_name\tmodule" > mapping.tsv
@@ -223,54 +233,32 @@ cat > context/global_map.md << 'EOF'
 ## Key Data Types (from phase1/types.h)
 - (TODO)
 
+## Third-Party Interfaces (DO NOT DECOMPILE)
+- (Agent to fill this during classification)
+
 ## Strings of Interest
 EOF
 cat "$OUTPUT_DIR/string_xref.md" >> context/global_map.md
-
-# Generate progress.md
-# 1. Get functions referencing key strings (from address: func_name -> string)
-XREF_FUNCS=$(grep -v '^#' "$OUTPUT_DIR/string_xref.md" | awk -F': ' '{print $2}' | awk -F' ->' '{print $1}' | grep -v '^$' | sort -u)
-
-# 2. Get main function explicitly
-MAIN_FUNC=$(grep -E '[[:space:]](sym\.)?main$' "$OUTPUT_DIR/all_functions.txt" | awk '{print $NF}' | head -n 1)
-
-# Combine and unique
-ROOT_FUNCS=$(echo -e "${XREF_FUNCS}\n${MAIN_FUNC}" | grep -vE '^(None|)$' | sort -u)
 
 cat > progress.md << EOF
 # Progress Tracking
 
 **Project Goal**: Reverse engineering
-**Current Phase**: Phase 2 (Raw Decompilation) / Phase 4 (Renaming)
+**Current Phase**: Phase 1.5 (AI Function Classification)
 
 ## Next Steps
-1. Review \`phase1/function_classification.md\` and \`context/global_map.md\`.
-2. Clean the root functions listed below.
+1. The AI Agent must review \`phase1/callgraph_summary.md\` and \`phase1/function_classification.md\`.
+2. The Agent updates \`mapping.tsv\` to label modules (e.g. \`core\`) and skip 3rd-party/system logic (e.g. \`[SKIP: json]\`).
+3. The Agent requests Human Review of \`mapping.tsv\`.
+4. Proceed to Phase 2 (Raw Decompilation) only for non-skipped functions.
 
-## Functions Analysed
-
-| Address | Raw Name | Clean Name | Status |
-|---------|----------|------------|--------|
 EOF
-
-for f in $ROOT_FUNCS; do
-    addr=$(grep -w "$f" "$OUTPUT_DIR/all_functions.txt" | awk '{print $1}' | head -n 1)
-    [ -z "$addr" ] && addr="[UNKNOWN]"
-    echo "| $addr | $f | [TODO] | Raw |" >> progress.md
-done
-
-# 8. Batch Decompile Root Functions
-echo "8/8: Auto-decompiling root functions to phase2/ ..."
-if [ -n "$ROOT_FUNCS" ] && [ -x "scripts/decompile.sh" ]; then
-    ./scripts/decompile.sh "$TARGET" $ROOT_FUNCS
-else
-    echo "No root functions found or scripts/decompile.sh not executable."
-fi
 
 echo ""
 echo "✅ Analysis & Bootstrap complete!"
 echo ""
 echo "Generated files:"
-ls -lh "$OUTPUT_DIR"/*.txt "$OUTPUT_DIR"/*.md 2>/dev/null | awk '{print "  " $9 " (" $5 ")"}'
+ls -lh "$OUTPUT_DIR"/*.txt "$OUTPUT_DIR"/*.md "$OUTPUT_DIR"/*.json 2>/dev/null | awk '{print "  " $9 " (" $5 ")"}'
 echo ""
-echo "Start with: cat $OUTPUT_DIR/next_steps.md"
+echo "CRITICAL: The AI Agent must now review phase1/callgraph_summary.md and update mapping.tsv with [SKIP:*] labels before proceeding!"
+echo "Start with: cat $OUTPUT_DIR/callgraph_summary.md"

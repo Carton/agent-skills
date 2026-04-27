@@ -181,7 +181,7 @@ This single command bootstraps the entire workspace:
 - Creates standard directories (`phase1/`, `phase2/`, `clean/raw/`, `clean/src/`, `context/`, `docs/`)
 - Generates skeletons for `mapping.tsv`, `progress.md`, and `context/global_map.md`
 - Generates all Phase 1 analysis outputs (`phase1/all_functions.txt`, `phase1/key_strings.md`, etc.)
-- **Auto-decompiles** suspected root functions directly into the `phase2/` directory!
+- Generates all Phase 1 analysis outputs (`phase1/all_functions.txt`, `phase1/callgraph_summary.md`, etc.)
 
 **Then load the platform-specific reference:**
 **Do not skip this step even if you have general knowledge of the platform.**
@@ -192,63 +192,42 @@ This single command bootstraps the entire workspace:
 | `file` output contains "ELF" | Read [references/elf-binary.md](references/elf-binary.md) |
 | C++ indicators found (MSVC DLLs, mangled names, `<stl>` headers) | Read [references/cpp-handling.md](references/cpp-handling.md) |
 
-### Scope Configuration
+### Scope Configuration & AI Function Classification [CRITICAL FOR AGENT]
 
-**Before diving into analysis**, confirm scope with the user. Default: **application code only**.
+**Before diving into decompilation**, you MUST separate application code from third-party libraries (e.g., STL, json, logging).
+If you do not do this, you will waste enormous amounts of time decompiling and cleaning stdlib internals.
 
-1. **Scope**: application code only / application + uncertain / full binary
-2. **Platform-specific questions**: load the platform reference above for detailed questions (PDB availability for PE, DWARF/PIE/stripped for ELF)
-3. **Language-specific**: if C++ detected, load [references/cpp-handling.md](references/cpp-handling.md)
-
-> **Default behavior**: Only reverse-engineer application code. Standard library wrappers, runtime support functions, and clearly identifiable third-party code should be cataloged but not decompiled unless the user explicitly requests it.
-
-### Library vs Application Code Separation
-
-`init-project.sh` performs this critical step automatically:
+`init-project.sh` extracts a full global call graph and generates a summary for you:
 1. It identifies imported functions and local functions.
-2. It extracts strings (`iz`) and cross-references (`axt`) to pinpoint "root business functions" (e.g., functions referencing "Usage" or "Error").
-3. It dumps the analysis into `phase1/function_classification.md` and `phase1/string_xref.md`.
+2. It generates `phase1/callgraph_summary.md` showing incoming/outgoing edges and standard library usage.
+3. It generates `phase1/function_classification.md` and `phase1/string_xref.md`.
 
-If you need to manually find helpers or expand scope:
+**Your Task as the Executing Agent:**
+1. **Analyze Dependencies**: Read `phase1/callgraph_summary.md`. Functions with high incoming edges are often core utilities. Functions that heavily call standard imports but are logically grouped might be 3rd-party libs.
+2. **Update Mapping**: Open `mapping.tsv` and classify every function into a module:
+   - For application code, use names like `core`, `auth`, `network`.
+   - For third-party or system libraries, you MUST use the prefix `[SKIP:` (e.g., `[SKIP: json]`, `[SKIP: stdlib]`, `[SKIP: spdlog]`).
+3. **Update Global Map**: For all functions you marked as `[SKIP:*]`, append their signatures/names to the "Third-Party Interfaces" section of `context/global_map.md`.
+4. **Request Human Review**: Stop and use your `ask_question` tool (or prompt the user) to review your proposed `mapping.tsv`. **Do not proceed to Phase 2 until the user approves the mapping.**
 
-```bash
-# 1. Find xrefs for a specific string
-r2 -q -e bin.relocs.apply=true -c "aaa; axt @ <string_vaddr>" ./target_binary
+> **Why this matters**: A typical C++ binary may have 90%+ runtime/STL code. Classifying early and marking them as `[SKIP:*]` means Phase 2 and Phase 5 scripts will completely ignore them, saving enormous amounts of time and context.
 
-# 2. Extract call targets from a function to discover helpers
-r2 -q -e bin.relocs.apply=true -c "aaa; pdf @ fcn.1400010a0" ./target_binary | grep -oP 'fcn\.\w+' | sort -u
-```
+### What to Produce [MANDATORY OUTPUTS]
 
-Repeat this tracing to find the 5-20 real business functions instead of thousands of STL wrappers.
+You MUST generate the following documentation before proceeding to Phase 2:
 
-**Step 3: Build a function classification document**
+1. **Updated `mapping.tsv`** [MANDATORY]
+   - All functions categorized.
+   - Third-party libraries explicitly marked with `[SKIP:*]` in the module column.
 
-Produce a simple classification (in `phase1/function_classification.md`):
+2. **`phase1/function_classification.md`** [MANDATORY]
+   - Function classification document
+   - Separate imported functions from application code
+   - List all application functions with addresses and likely roles
+   - Document module groupings
+   - Include statistics (total functions, imports, locals, application code)
 
-```markdown
-# Function Classification
-
-| Category | Count | Notes |
-|----------|-------|-------|
-| Imported (external DLL calls) | N | Listed in ii / iij |
-| Runtime wrappers (MSVCP/VCRUNTIME/ucrtbase) | N | Thin shims around DLL calls |
-| STL / exception support | N | __CxxThrowException, etc. |
-| Application code (to reverse) | N | **This is the focus** |
-
-## Application Functions (sorted by address)
-| Address | Name (if known) | Size | Likely Role |
-|---------|-----------------|------|-------------|
-| 0x1400010a0 | fcn.1400010a0 | 150 | main (references Usage string) |
-| ...
-```
-
-**Step 4: Only decompile application functions**
-
-Use the classified list to drive Phase 2 decompilation. Never decompile imported functions or obvious runtime wrappers — they are already documented by their DLL name and symbol.
-
-> **Why this matters**: A typical C++ binary may have 90%+ runtime/STL code. Classifying early means you only decompile the 10% that matters, saving enormous amounts of time and context.
-
-### r2 Quick Reference
+**DO NOT proceed to Phase 2 until the user explicitly approves `mapping.tsv`.**### r2 Quick Reference
 
 | Command | Purpose |
 |---------|---------|
