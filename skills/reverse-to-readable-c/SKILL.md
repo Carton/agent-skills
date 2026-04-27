@@ -14,7 +14,7 @@ The workflow is phase-based and aggressively context-limited. Never try to load 
 **Before starting**, run a quick tool check:
 
 ```bash
-check_tools () { which r2 && which file && which python3 && r2 -v | head -1; }; check_tools && echo "OK"
+function check_tools { which r2 && which file && which python3 && r2 -v | head -1; }; check_tools && echo "OK"
 ```
 
 For full installation and troubleshooting, read [references/install-linux.md](references/install-linux.md).
@@ -324,7 +324,7 @@ timeout 60 r2 -q -e scr.color=false -e bin.relocs.apply=true \
 **Batch decompilation with fallback:**
 
 ```bash
-decompile_function () {
+function decompile_function {
     local addr=$1
     local outfile="phase2/func_${addr}.c"
     # Try pdg first, fall back to pdc
