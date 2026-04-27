@@ -22,6 +22,6 @@ echo "Injecting address comments into clean/src/ ..."
 # We need to make sure it knows where the src files are.
 # add_address_comments.py usually expects a mapping file.
 # Let's check how add_address_comments.py works.
-python3 "$PYTHON_SCRIPT" --mapping mapping.tsv --root .
+python3 "$PYTHON_SCRIPT" --mapping mapping.tsv --base-dir .
 
 echo "Done."

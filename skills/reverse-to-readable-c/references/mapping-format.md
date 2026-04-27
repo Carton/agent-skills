@@ -1,49 +1,46 @@
 # Mapping Format
 
-The bundled scripts expect a TSV mapping file by default.
+The bundled scripts expect a TSV (Tab-Separated Values) mapping file named `mapping.tsv` by default. This file tracks the translation from raw decompiled functions to structured, renamed source files.
 
 ## Columns
 
 ```text
-input_path	output_path	old_symbol	new_symbol	address
+address	original_name	clean_name	module
 ```
 
 Rules:
 
-- `input_path`: required
-- `output_path`: optional; if empty, keep the original basename
-- `old_symbol`: optional
-- `new_symbol`: optional
-- `address`: optional; used for inserting provenance comments
-- repeated rows for the same `output_path` are allowed when applying multiple symbol renames to one file
+- `address`: The original address of the function in the binary (e.g., `0x401000`). Used for inserting provenance comments.
+- `original_name`: The raw name produced by the decompiler (e.g., `fcn.00401000` or an imported symbol name).
+- `clean_name`: The semantic name you want to give to the file and function (e.g., `startup_main`).
+- `module`: The logical component or directory name where the cleaned file will reside (e.g., `core`, `network`).
+
+> **Note**: Both `clean_name` and `module` will initially be set to `[TODO]` by `init-project.sh`. You must update these before running `apply-mapping.sh`.
 
 ## Example
 
-> **Important**: `output_path` is relative to `--output-root`, not an absolute or project-root-relative path.
-
 ```text
-input_path	output_path	old_symbol	new_symbol	address
-phase2/func_0x401000.c	app/core/startup.c	fcn.00401000	startup_main	0x401000
-phase2/func_0x401230.c	app/session/session_core.c	fcn.00401230	session_core	0x401230
-phase3/func_0x4018a0.c	app/network/error_converter.c			0x4018a0
+address	original_name	clean_name	module
+0x401000	fcn.00401000	startup_main	core
+0x401230	fcn.00401230	session_core	session
+0x4018a0	fcn.004018a0	[TODO]	[TODO]
 ```
 
 ## Typical Usage
 
-Copy and rename files:
-
+Copy and rename files (Phase 4):
+This creates `clean/raw/<module>/<clean_name>.c` and `clean/src/<module>/<clean_name>.c`.
 ```bash
-python3 scripts/apply_mapping.py --mapping mapping.tsv --output-root clean/src
+scripts/apply-mapping.sh
 ```
 
 Add address comments:
-
+This injects `// Original address: @fcn.XXXX` into the `clean/src/` files based on the mapping.
 ```bash
-python3 scripts/add_address_comments.py --mapping mapping.tsv
+scripts/add-comments.sh
 ```
 
 Compare string literals between raw and cleaned files:
-
 ```bash
 # Use --mapping when files have been renamed (Phase 4+):
 python3 scripts/literal_diff.py --left-root phase2 --right-root clean/src --mapping mapping.tsv

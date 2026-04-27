@@ -34,8 +34,25 @@ def load_mapping(mapping_path: Path) -> list[tuple[str, str]]:
     with mapping_path.open("r", encoding="utf-8", newline="") as handle:
         reader = csv.DictReader(handle, delimiter="\t")
         for row in reader:
+            # Try old format first
             input_path = (row.get("input_path") or "").strip()
-            output_path = (row.get("output_path") or input_path).strip()
+            output_path = (row.get("output_path") or "").strip()
+            
+            # If old format isn't there, try new format
+            if not input_path:
+                orig = (row.get("original_name") or "").strip()
+                if orig:
+                    input_path = f"func_{orig}.c"
+            
+            if not output_path:
+                clean = (row.get("clean_name") or "").strip()
+                mod = (row.get("module") or "").strip()
+                if clean and clean != "[TODO]" and mod and mod != "[TODO]":
+                    output_path = f"{mod}/{clean}.c"
+            
+            if not output_path:
+                output_path = input_path
+                
             if input_path:
                 pairs.append((input_path, output_path))
     return pairs

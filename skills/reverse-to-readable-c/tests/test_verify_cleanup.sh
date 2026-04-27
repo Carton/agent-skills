@@ -9,9 +9,7 @@ TEST_DIR="$SKILL_ROOT/test_run"
 echo "Running Cleanup Verification Test in $TEST_DIR..."
 
 # Ensure we have a mapped project
-if [ ! -d "$TEST_DIR/clean/src" ]; then
-    ./tests/test_mapping.sh
-fi
+./tests/test_mapping.sh
 
 cd "$TEST_DIR"
 

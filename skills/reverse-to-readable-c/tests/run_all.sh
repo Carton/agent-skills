@@ -11,6 +11,8 @@ echo "=== Running All Skill Tests ==="
 ./tests/test_bootstrap.sh
 ./tests/test_mapping.sh
 ./tests/test_verify_cleanup.sh
+./tests/test_add_comments.sh
+./tests/test_literal_diff.sh
 
 echo ""
 echo "✨ ALL TESTS PASSED ✨"

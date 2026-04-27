@@ -8,10 +8,9 @@ TEST_DIR="$SKILL_ROOT/test_run"
 
 echo "Running Mapping Application Test in $TEST_DIR..."
 
-# Ensure we have a bootstrapped project in test_run
-if [ ! -f "$TEST_DIR/mapping.tsv" ]; then
-    ./tests/test_bootstrap.sh
-fi
+# Ensure we have a fresh bootstrapped project in test_run
+rm -f "$TEST_DIR/mapping.tsv"
+./tests/test_bootstrap.sh
 
 cd "$TEST_DIR"
 
