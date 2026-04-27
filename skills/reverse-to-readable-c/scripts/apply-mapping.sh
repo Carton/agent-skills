@@ -13,8 +13,12 @@ echo "Applying mapping from mapping.tsv..."
 # Skip header line
 # We use a while loop with IFS set to tab to parse the TSV correctly
 tail -n +2 mapping.tsv | while IFS=$'\t' read -r addr orig clean mod; do
-    # Skip entries that are still marked as [TODO]
+    # Skip entries that are still marked as [TODO] or [SKIP:*]
     if [[ "$clean" == "[TODO]" ]] || [[ "$mod" == "[TODO]" ]] || [[ -z "$clean" ]] || [[ -z "$mod" ]]; then
+        continue
+    fi
+    
+    if [[ "$mod" == \[SKIP:* ]]; then
         continue
     fi
     
