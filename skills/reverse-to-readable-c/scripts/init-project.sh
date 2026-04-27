@@ -196,7 +196,7 @@ echo "6/6: Generating recommendations..."
 } > "$OUTPUT_DIR/next_steps.md"
 
 # 7. Analyze Callgraph for AI Classification
-echo "7/8: Analyzing callgraph for AI classification..."
+echo "7/9: Analyzing callgraph for AI classification..."
 if [ -f "scripts/analyze_callgraph.py" ] && [ -f "$OUTPUT_DIR/callgraph.json" ]; then
     python3 scripts/analyze_callgraph.py "$OUTPUT_DIR/callgraph.json" "$OUTPUT_DIR/callgraph_summary.md"
 else
@@ -204,14 +204,8 @@ else
     echo "Please run agCj > $OUTPUT_DIR/callgraph.json manually."
 fi
 
-# 8. Generate Workspace Skeletons
-echo "8/8: Generating workspace skeletons (progress.md, mapping.tsv, global_map.md)..."
-
-# Create architecture blueprint placeholder
-cp "$SCRIPT_DIR/../references/architecture-blueprint-template.md" docs/architecture_blueprint.md
-echo "TODO: Design architecture in this file before Phase 4" >> docs/architecture_blueprint.md
-
-# Generate mapping.tsv
+# 8. Generate Basic mapping.tsv (needed for classifier)
+echo "8/9: Generating basic mapping.tsv..."
 echo -e "address\toriginal_name\tclean_name\tmodule" > mapping.tsv
 grep -v 'sym\.imp\.' "$OUTPUT_DIR/all_functions.txt" \
     | grep -vE '(entry|_start|__libc_csu|__do_global|deregister_tm_clones|register_tm_clones|frame_dummy)' \
@@ -219,6 +213,79 @@ grep -v 'sym\.imp\.' "$OUTPUT_DIR/all_functions.txt" \
     | while read -r addr name; do
     [ -n "$name" ] && echo -e "$addr\t$name\t[TODO]\t[TODO]" >> mapping.tsv
 done
+
+# 8.5. Automated Function Classification (NEW)
+echo "8.5/9: Running automated function classifier..."
+CLASSIFIER_SCRIPT="$SCRIPT_DIR/classify_functions.py"
+
+if [ -f "$CLASSIFIER_SCRIPT" ] && [ -f "$OUTPUT_DIR/callgraph.json" ]; then
+    # Check if string_xref.md exists
+    if [ -f "$OUTPUT_DIR/string_xref.md" ]; then
+        echo "[*] Using integrated classifier (graph + strings + propagation)"
+        python3 "$CLASSIFIER_SCRIPT" \
+            "$OUTPUT_DIR/callgraph.json" \
+            "$OUTPUT_DIR/string_xref.md" \
+            mapping.tsv \
+            mapping.tsv.new
+    else
+        echo "[*] Using graph-based classifier (no string references)"
+        python3 "$CLASSIFIER_SCRIPT" \
+            "$OUTPUT_DIR/callgraph.json" \
+            none \
+            mapping.tsv \
+            mapping.tsv.new
+    fi
+
+    # Replace mapping if successful
+    if [ -f "mapping.tsv.new" ]; then
+        mv mapping.tsv mapping.tsv.backup 2>/dev/null || true
+        mv mapping.tsv.new mapping.tsv
+
+        # Generate classification summary
+        {
+            echo "# Function Classification Summary"
+            echo ""
+            echo "Generated: $(date)"
+            echo ""
+            echo "## Category Statistics"
+            echo ""
+            tail -n +2 mapping.tsv | cut -f4 | sort | uniq -c | sort -rn | \
+                awk '{printf "- %-30s: %4d\n", $2, $1}'
+            echo ""
+            echo "## Top Functions by Category (First 5 per category)"
+            echo ""
+            tail -n +2 mapping.tsv | awk -F'\t' '{
+                category = $4
+                func_name = $2
+                if (category != prev_cat) {
+                    if (prev_cat != "") printf "\n";
+                    printf "### %s\n\n", category;
+                    prev_cat = category;
+                    count = 0;
+                }
+                if (count < 5) {
+                    printf "- %s\n", func_name;
+                    count++;
+                }
+            }'
+        } > "$OUTPUT_DIR/classification_summary.md"
+
+        echo "[✅] Function classification complete"
+        echo "    - Summary: $OUTPUT_DIR/classification_summary.md"
+        echo "    - Mapping: mapping.tsv"
+    else
+        echo "[⚠️]  Classification failed, using basic mapping"
+    fi
+else
+    echo "[⚠️]  Classifier script not found, skipping automated classification"
+fi
+
+# 9. Generate Workspace Skeletons
+echo "9/9: Generating workspace skeletons (progress.md, global_map.md)..."
+
+# Create architecture blueprint placeholder
+cp "$SCRIPT_DIR/../references/architecture-blueprint-template.md" docs/architecture_blueprint.md
+echo "TODO: Design architecture in this file before Phase 4" >> docs/architecture_blueprint.md
 
 cp "$SCRIPT_DIR/../references/global-map-template.md" context/global_map.md
 cat "$OUTPUT_DIR/string_xref.md" >> context/global_map.md

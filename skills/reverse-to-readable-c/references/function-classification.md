@@ -261,15 +261,3 @@ scripts/init-project.sh ./stripped_binary phase1
 - `phase1/callgraph_summary.md` - Call graph analysis for classification
 - `Phase 2: Raw Decompilation` - How to use classification results
 
-## Changelog
-
-### v2.0 (Current)
-- Added automated function classification
-- Multi-layer strategy (patterns + strings + propagation + graph)
-- Zero external dependencies (pure Python)
-- Configurable propagation parameters
-
-### v1.0 (Original)
-- Manual classification required
-- No propagation support
-- Higher unknown rates
