@@ -27,17 +27,25 @@ DIFF_OUTPUT=$(diff -q <(cd "$RAW_DIR" && find . -type f | sort) \
                       <(cd "$SRC_DIR" && find . -type f | sort) || true)
 if [ -n "$DIFF_OUTPUT" ]; then
     echo "❌ FAIL: Directory structures do not match:"
-    echo "$DIFF_OUTPUT"
+    echo "$DIFF_OUTPUT" | head -n 10
+    if [ $(echo "$DIFF_OUTPUT" | wc -l) -gt 10 ]; then
+        echo "  ... (output truncated)"
+    fi
     exit 1
 fi
 echo "✅ PASS: Directory structures match"
 
 # Check 2: Verify each file
-echo "Check 2: Verifying files are fully cleaned..."
+echo "Verifying files..."
 UNCLEAN_COUNT=0
 ARTIFACT_COUNT=0
 TOTAL_FILES=0
 TOTAL_LINES_REDUCED=0
+
+UNCLEAN_LOG="clean/unclean_files.log"
+ARTIFACT_LOG="clean/artifact_files.log"
+ARTIFACT_DETAILS="clean/artifact_details.log"
+rm -f "$UNCLEAN_LOG" "$ARTIFACT_LOG" "$ARTIFACT_DETAILS"
 
 while IFS= read -r -d '' RAW_FILE; do
     REL_PATH="${RAW_FILE#$RAW_DIR/}"
@@ -46,7 +54,7 @@ while IFS= read -r -d '' RAW_FILE; do
 
     # 1. Identical check
     if cmp -s "$RAW_FILE" "$SRC_FILE"; then
-        echo "  ⚠️  NOT CLEANED: $REL_PATH (Identical to raw)"
+        echo "$REL_PATH" >> "$UNCLEAN_LOG"
         UNCLEAN_COUNT=$((UNCLEAN_COUNT + 1))
         continue
     fi
@@ -59,21 +67,33 @@ while IFS= read -r -d '' RAW_FILE; do
     # We look for fcn. but ignore those prefixed with @ (traceability comments)
     ARTIFACTS=$(grep -E -n 'fcn\.[0-9a-fA-F]+|\b[a-zA-Z]*Var[0-9]+\b|\bunkbyte[0-9]+\b' "$SRC_FILE" | grep -v '@fcn\.' || true)
     if [ -n "$ARTIFACTS" ]; then
-        echo "  ⚠️  ARTIFACTS FOUND in $REL_PATH:"
-        echo "$ARTIFACTS" | head -n 3 | sed 's/^/    /'
+        echo "$REL_PATH" >> "$ARTIFACT_LOG"
+        echo "--- $REL_PATH ---" >> "$ARTIFACT_DETAILS"
+        echo "$ARTIFACTS" | head -n 3 >> "$ARTIFACT_DETAILS"
         ARTIFACT_COUNT=$((ARTIFACT_COUNT + 1))
     fi
 
 done < <(find "$RAW_DIR" -name "*.c" -print0)
 
-echo ""
 FAIL=0
 if [ "$UNCLEAN_COUNT" -gt 0 ]; then
     echo "❌ FAIL: $UNCLEAN_COUNT file(s) identical to raw."
+    if [ "$UNCLEAN_COUNT" -lt 20 ]; then
+        sed 's/^/  - /' "$UNCLEAN_LOG"
+    else
+        echo "  - List saved to: $UNCLEAN_LOG"
+    fi
     FAIL=1
 fi
+
 if [ "$ARTIFACT_COUNT" -gt 0 ]; then
     echo "❌ FAIL: $ARTIFACT_COUNT file(s) contain decompiler artifacts."
+    if [ "$ARTIFACT_COUNT" -lt 20 ]; then
+        sed 's/^/  - /' "$ARTIFACT_LOG"
+    else
+        echo "  - List saved to: $ARTIFACT_LOG"
+        echo "  - Details saved to: $ARTIFACT_DETAILS"
+    fi
     FAIL=1
 fi
 
