@@ -31,6 +31,9 @@ Every reverse engineering project using this skill MUST produce the following ou
   - Application function listing with addresses
   - Module grouping
   - Binary statistics
+- **`phase1/library_triage_candidates.md`**
+  - Conservative report of likely standard-library/runtime/third-party functions after the agent fills `phase1/library_triage_rules.json`
+  - Review queue for `[SKIP:*]` candidates before Phase 2
 
 ### 2. Phase 4 Output (Required before Phase 5)
 - **`clean/raw/` directory** - Renamed and reorganized RAW decompiler output
@@ -207,14 +210,19 @@ If you do not do this, you will waste enormous amounts of time decompiling and c
 1. It identifies imported functions and local functions.
 2. It generates `phase1/callgraph_summary.md` showing incoming/outgoing edges and standard library usage.
 3. It generates `phase1/function_classification.md` and `phase1/string_xref.md`.
+4. It generates `phase1/library_triage_rules.json`, a fill-in template for conservative library/runtime triage.
+
+For details on the triage report and review workflow, see [references/library-triage.md](references/library-triage.md).
 
 **Your Task as the Executing Agent:**
 1. **Analyze Dependencies**: Read `phase1/callgraph_summary.md`. Functions with high incoming edges are often core utilities. Functions that heavily call standard imports but are logically grouped might be 3rd-party libs.
-2. **Update Mapping**: Open `mapping.tsv` and classify every function into a module:
+2. **Fill Library Triage Rules**: Edit `phase1/library_triage_rules.json`. Add project/product strings to `application_markers`, and enable/add third-party categories only after evidence from `all_strings.txt`, `string_xref.md`, and `callgraph_summary.md`.
+3. **Run Library Triage**: Run `python3 scripts/triage_library_candidates.py --rules phase1/library_triage_rules.json`. Review `phase1/library_triage_candidates.md`; confirm `REVIEW_SKIP` candidates before changing `mapping.tsv`; treat `AI_REVIEW` as a small manual/agent inspection batch.
+4. **Update Mapping**: Open `mapping.tsv` and classify every function into a module:
    - For application code, use names like `core`, `auth`, `network`.
-   - For third-party or system libraries, you MUST use the prefix `[SKIP:` (e.g., `[SKIP: json]`, `[SKIP: stdlib]`, `[SKIP: spdlog]`).
-3. **Update Global Map**: For all functions you marked as `[SKIP:*]`, append their signatures/names to the "Third-Party Interfaces" section of `context/global_map.md`.
-4. **Request Human Review**: Stop and use your `ask_question` tool (or prompt the user) to review your proposed `mapping.tsv`. **Do not proceed to Phase 2 until the user approves the mapping.**
+   - For third-party or system libraries, you MUST use the prefix `[SKIP:` (e.g., `[SKIP: stdlib]`, `[SKIP: json]`, `[SKIP: runtime]`).
+5. **Update Global Map**: For all functions you marked as `[SKIP:*]`, append their signatures/names to the "Third-Party Interfaces" section of `context/global_map.md`.
+6. **Request Human Review**: Stop and use your `ask_question` tool (or prompt the user) to review your proposed `mapping.tsv`. **Do not proceed to Phase 2 until the user approves the mapping.**
 
 > **Why this matters**: A typical C++ binary may have 90%+ runtime/STL code. Classifying early and marking them as `[SKIP:*]` means Phase 2 and Phase 5 scripts will completely ignore them, saving enormous amounts of time and context.
 
@@ -232,6 +240,12 @@ You MUST generate the following documentation before proceeding to Phase 2:
    - List all application functions with addresses and likely roles
    - Document module groupings
    - Include statistics (total functions, imports, locals, application code)
+
+3. **`phase1/library_triage_candidates.md`** [MANDATORY]
+   - Conservative report of standard-library/runtime/third-party candidates
+   - Review first: `REVIEW_SKIP`, then `AI_REVIEW`
+   - Must be generated after filling `phase1/library_triage_rules.json`
+   - This report is advisory and MUST NOT replace human/agent mapping review
 
 **DO NOT proceed to Phase 2 until the user explicitly approves `mapping.tsv`.**### r2 Quick Reference
 
@@ -279,10 +293,14 @@ You MUST generate the following documentation before proceeding to Phase 2:
    ## Next Steps
    ```
 
-2. **Entry chain note** - How execution flows from entry point to main
-3. **Module map** - First-pass grouping of functions into modules
-4. **Function index** - All functions sorted by address with purpose
-5. **Risk list** - Security-sensitive areas (parsers, auth, networking, etc.)
+2. **`phase1/library_triage_candidates.md`** [MANDATORY]
+   - High-confidence skip candidates (`REVIEW_SKIP`)
+   - Medium-confidence manual/AI candidates (`AI_REVIEW`)
+   - Application-marker candidates from `phase1/library_triage_rules.json` that should be kept out of automatic skip
+3. **Entry chain note** - How execution flows from entry point to main
+4. **Module map** - First-pass grouping of functions into modules
+5. **Function index** - All functions sorted by address with purpose
+6. **Risk list** - Security-sensitive areas (parsers, auth, networking, etc.)
 
 **DO NOT proceed to Phase 2 until `phase1/function_classification.md` is complete.**
 

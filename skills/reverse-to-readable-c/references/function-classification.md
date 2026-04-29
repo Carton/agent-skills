@@ -65,6 +65,24 @@ The classifier will automatically:
 3. Generate `mapping.tsv` with classifications
 4. Create `phase1/classification_summary.md` with statistics
 
+`init-project.sh` also creates a fill-in rules file for conservative library/runtime triage after the graph classifier:
+
+```bash
+python3 scripts/triage_library_candidates.py \
+    --init-rules phase1/library_triage_rules.json
+```
+
+The executing agent must fill project-specific rules, then run:
+
+```bash
+python3 scripts/triage_library_candidates.py \
+    --rules phase1/library_triage_rules.json \
+    --output-tsv phase1/library_triage_candidates.tsv \
+    --output-md phase1/library_triage_candidates.md
+```
+
+This pass is advisory. Built-in rules are intentionally small and focus on generic C/C++ runtime signals. Project-specific third-party rules and application markers belong in `phase1/library_triage_rules.json`. The script does **not** modify `mapping.tsv`.
+
 ### Manual (Advanced)
 
 If you want to re-run classification with different parameters:
@@ -168,7 +186,7 @@ self.module_keywords = {
 
 ### 1. Review Classification Before Phase 2
 
-Always review `mapping.tsv` before proceeding to Phase 2:
+Always review `mapping.tsv` and the library triage report before proceeding to Phase 2:
 
 ```bash
 # Check classification coverage
@@ -179,6 +197,15 @@ grep $'\tsteam_errors$' mapping.tsv
 grep $'\tcore$' mapping.tsv
 grep $'\[SKIP:' mapping.tsv
 ```
+
+Review order:
+
+1. Fill `phase1/library_triage_rules.json` with project-specific `application_markers` and confirmed third-party patterns.
+2. Run `scripts/triage_library_candidates.py --rules phase1/library_triage_rules.json`.
+3. Confirm `REVIEW_SKIP` entries in `phase1/library_triage_candidates.md`.
+4. Inspect `AI_REVIEW` entries in small batches.
+5. Update `mapping.tsv` only after confirming the function is not application logic.
+6. Add confirmed third-party/runtime signatures to `context/global_map.md`.
 
 ### 2. Adjust for Your Binary
 
@@ -260,4 +287,3 @@ scripts/init-project.sh ./stripped_binary phase1
 - `mapping.tsv` - Function classification mapping
 - `phase1/callgraph_summary.md` - Call graph analysis for classification
 - `Phase 2: Raw Decompilation` - How to use classification results
-

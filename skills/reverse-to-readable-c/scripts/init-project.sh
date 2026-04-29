@@ -196,7 +196,7 @@ echo "6/6: Generating recommendations..."
 } > "$OUTPUT_DIR/next_steps.md"
 
 # 7. Analyze Callgraph for AI Classification
-echo "7/9: Analyzing callgraph for AI classification..."
+echo "7/10: Analyzing callgraph for AI classification..."
 if [ -f "scripts/analyze_callgraph.py" ] && [ -f "$OUTPUT_DIR/callgraph.json" ]; then
     python3 scripts/analyze_callgraph.py "$OUTPUT_DIR/callgraph.json" "$OUTPUT_DIR/callgraph_summary.md"
 else
@@ -205,7 +205,7 @@ else
 fi
 
 # 8. Generate Basic mapping.tsv (needed for classifier)
-echo "8/9: Generating basic mapping.tsv..."
+echo "8/10: Generating basic mapping.tsv..."
 echo -e "address\toriginal_name\tclean_name\tmodule" > mapping.tsv
 grep -v 'sym\.imp\.' "$OUTPUT_DIR/all_functions.txt" \
     | grep -vE '(entry|_start|__libc_csu|__do_global|deregister_tm_clones|register_tm_clones|frame_dummy)' \
@@ -214,8 +214,8 @@ grep -v 'sym\.imp\.' "$OUTPUT_DIR/all_functions.txt" \
     [ -n "$name" ] && echo -e "$addr\t$name\t[TODO]\t[TODO]" >> mapping.tsv
 done
 
-# 8.5. Automated Function Classification (NEW)
-echo "8.5/9: Running automated function classifier..."
+# 8.5. Automated Function Classification
+echo "8.5/10: Running automated function classifier..."
 CLASSIFIER_SCRIPT="$SCRIPT_DIR/classify_functions.py"
 
 if [ -f "$CLASSIFIER_SCRIPT" ] && [ -f "$OUTPUT_DIR/callgraph.json" ]; then
@@ -280,8 +280,27 @@ else
     echo "[⚠️]  Classifier script not found, skipping automated classification"
 fi
 
+# 8.6. Conservative Library/Runtime Triage Rules
+echo "8.6/10: Preparing library/runtime triage rules template..."
+TRIAGE_SCRIPT="$SCRIPT_DIR/triage_library_candidates.py"
+
+if [ -f "$TRIAGE_SCRIPT" ]; then
+    python3 "$TRIAGE_SCRIPT" \
+        --project-root . \
+        --init-rules "$OUTPUT_DIR/library_triage_rules.json" || \
+        echo "[⚠️]  Library/runtime rules template generation failed; continue with mapping review"
+
+    if [ -f "$OUTPUT_DIR/library_triage_rules.json" ]; then
+        echo "[✅] Library/runtime triage rules template generated"
+        echo "    - Rules: $OUTPUT_DIR/library_triage_rules.json"
+        echo "    - Agent must fill project-specific markers, then run scripts/triage_library_candidates.py --rules $OUTPUT_DIR/library_triage_rules.json"
+    fi
+else
+    echo "[⚠️]  Triage script not found, skipping library/runtime triage"
+fi
+
 # 9. Generate Workspace Skeletons
-echo "9/9: Generating workspace skeletons (progress.md, global_map.md)..."
+echo "9/10: Generating workspace skeletons (progress.md, global_map.md)..."
 
 # Create architecture blueprint placeholder
 cp "$SCRIPT_DIR/../references/architecture-blueprint-template.md" docs/architecture_blueprint.md
@@ -297,10 +316,11 @@ cat > progress.md << EOF
 **Current Phase**: Phase 1.5 (AI Function Classification)
 
 ## Next Steps
-1. The AI Agent must review \`phase1/callgraph_summary.md\` and \`phase1/function_classification.md\`.
-2. The Agent updates \`mapping.tsv\` to label modules (e.g. \`core\`) and skip 3rd-party/system logic (e.g. \`[SKIP: json]\`).
-3. The Agent requests Human Review of \`mapping.tsv\`.
-4. Proceed to Phase 2 (Raw Decompilation) only for non-skipped functions.
+1. The AI Agent must review \`phase1/callgraph_summary.md\`, \`phase1/function_classification.md\`, and \`phase1/library_triage_rules.json\`.
+2. The Agent fills project-specific triage rules, then runs \`scripts/triage_library_candidates.py --rules phase1/library_triage_rules.json\`.
+3. The Agent reviews \`phase1/library_triage_candidates.md\` and updates \`mapping.tsv\` to label modules and confirmed \`[SKIP:*]\` functions.
+4. The Agent requests Human Review of \`mapping.tsv\`.
+5. Proceed to Phase 2 (Raw Decompilation) only for non-skipped functions.
 
 EOF
 
@@ -310,5 +330,5 @@ echo ""
 echo "Generated files:"
 ls -lh "$OUTPUT_DIR"/*.txt "$OUTPUT_DIR"/*.md "$OUTPUT_DIR"/*.json 2>/dev/null | awk '{print "  " $9 " (" $5 ")"}'
 echo ""
-echo "CRITICAL: The AI Agent must now review phase1/callgraph_summary.md and update mapping.tsv with [SKIP:*] labels before proceeding!"
-echo "Start with: cat $OUTPUT_DIR/callgraph_summary.md"
+echo "CRITICAL: The AI Agent must now review phase1/callgraph_summary.md and fill phase1/library_triage_rules.json before proceeding!"
+echo "Then run: python3 scripts/triage_library_candidates.py --rules $OUTPUT_DIR/library_triage_rules.json"
