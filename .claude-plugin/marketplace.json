@@ -17,6 +17,15 @@
       "skills": [
         "./skills/epic-cli"
       ]
+    },
+    {
+      "name": "development-tools",
+      "description": "Development workflow and repository maintenance tools",
+      "source": "./",
+      "strict": false,
+      "skills": [
+        "./skills/commit-message"
+      ]
     }
   ]
 }

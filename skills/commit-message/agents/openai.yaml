@@ -1,0 +1,4 @@
+interface:
+  display_name: "Commit Message"
+  short_description: "Create and review Conventional Commit messages from git diffs."
+  default_prompt: "Create a commit message for the staged changes using this repository's commit-message skill."
