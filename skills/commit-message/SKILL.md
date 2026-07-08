@@ -18,7 +18,7 @@ Create clear, accurate Conventional Commit messages from the actual git diff. Th
 2. Identify the primary user-visible or maintainer-visible change.
 3. Choose the Conventional Commit type and optional scope.
 4. Write the subject line.
-5. Add a body only when the motivation, behavior impact, migration note, or validation is not obvious from the subject.
+5. Decide whether a one-line message is allowed. Use a one-line subject only for changes of 10 lines or fewer whose intent and impact are fully obvious; otherwise add a body.
 
 Do not create or suggest a commit message without reading the diff unless the user explicitly provides the complete diff or exact message content to review.
 
@@ -61,7 +61,14 @@ Scope is optional. Omit it when there is no clear, short module or area name.
 
 ## Body Rules
 
-Add a body when any of these are true:
+Default to adding a body. A one-line subject is allowed only when all of these are true:
+
+- The diff changes 10 lines or fewer.
+- The change is confined to one narrow behavior or artifact.
+- The motivation, impact, and validation are obvious from the subject.
+- The change does not alter behavior, compatibility, configuration, data shape, or workflow.
+
+Add a body whenever any of these are true:
 
 - The reason for the change is not obvious.
 - The change alters behavior, compatibility, configuration, data shape, or workflow.
@@ -92,4 +99,4 @@ test(commit): cover invalid subject types
 - Using `chore` when a more precise type applies.
 - Adding a broad scope such as `repo` or `misc`.
 - Writing a subject that says "update files" or "apply changes".
-- Skipping the body for a behavior change that needs context.
+- Using one-line messages for diffs over 10 lines or for behavior changes that need context.
