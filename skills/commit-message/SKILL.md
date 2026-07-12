@@ -18,7 +18,9 @@ Create clear, accurate Conventional Commit messages from the actual git diff. Th
 2. Identify the primary user-visible or maintainer-visible change.
 3. Choose the Conventional Commit type and optional scope.
 4. Write the subject line.
-5. Decide whether a one-line message is allowed. Use a one-line subject only for changes of 10 lines or fewer whose intent and impact are fully obvious; otherwise add a body.
+5. Decide whether a body is mandatory before writing the message. Run
+   `git diff --numstat`, add additions and deletions, then apply the mandatory
+   body gate below.
 
 Do not create or suggest a commit message without reading the diff unless the user explicitly provides the complete diff or exact message content to review.
 
@@ -59,23 +61,19 @@ Scope is optional. Omit it when there is no clear, short module or area name.
 - Be specific about the changed behavior or artifact.
 - Do not mention implementation trivia unless that is the committed change.
 
-## Body Rules
+## Mandatory Body Gate
 
-Default to adding a body. A one-line subject is allowed only when all of these are true:
+**A body is required unless every condition below is true:**
 
-- The diff changes 10 lines or fewer.
-- The change is confined to one narrow behavior or artifact.
-- The motivation, impact, and validation are obvious from the subject.
-- The change does not alter behavior, compatibility, configuration, data shape, or workflow.
+- Added lines plus deleted lines is at most 10.
+- The diff is one narrow, non-behavioral artifact change.
+- The subject alone states both the reason and the impact.
 
-Add a body whenever any of these are true:
-
-- The reason for the change is not obvious.
-- The change alters behavior, compatibility, configuration, data shape, or workflow.
-- There are important validation notes.
-- Multiple related changes need a short explanation.
-
-Wrap body lines at roughly 72 characters. Explain why and what changed; avoid restating every file touched.
+Any behavior, compatibility, configuration, data-shape, API, or workflow
+change requires a body regardless of line count. If a body is required, do not
+emit or create a one-line commit: write a blank line followed by one or two
+sentences explaining why and what changed. Wrap body lines at roughly 72
+characters and avoid repeating the file list.
 
 For breaking changes, include a footer:
 
