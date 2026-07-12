@@ -1,0 +1,35 @@
+{
+  "skill_name": "android-logcat-analyzer",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "我的Android应用崩溃了，logcat显示有OutOfMemoryError，帮我分析一下内存问题。日志在 ~/Downloads/app_crash/logcat.log",
+      "expected_output": "应该识别OutOfMemoryError崩溃，分析gc_for_alloc模式，检查内存泄漏迹象（频繁GC、Activity未销毁等），并提供内存优化建议。",
+      "files": []
+    },
+    {
+      "id": 2,
+      "prompt": "用户报告应用出现ANR，这是logcat日志，帮我找出原因。注意使用从后往前找的策略",
+      "expected_output": "应该从日志末尾开始找到最晚时间戳，往前推5分钟分析，识别ANR类型（Input timeout、Service timeout等），提取traces.txt中的主线程阻塞信息，找出阻塞原因。",
+      "files": []
+    },
+    {
+      "id": 3,
+      "prompt": "Native code崩溃，logcat显示SIGSEGV signal 11，fault addr 0x0。帮我分析这个native crash",
+      "expected_output": "应该识别这是null pointer dereference，提取backtrace信息，说明如何使用ndk-stack符号化，检查JNI调用，提供null pointer检查的修复建议。",
+      "files": []
+    },
+    {
+      "id": 4,
+      "prompt": "应用性能越来越差，使用一段时间后会卡顿。帮我分析logcat看看是不是内存泄漏",
+      "expected_output": "应该分析gc_for_alloc频率模式，检查Activity生命周期（是否多次onCreate但很少onDestroy），识别常见泄漏模式（Handler、AsyncTask、静态Context引用），建议使用LeakCanary或Android Studio Profiler进一步分析。",
+      "files": []
+    },
+    {
+      "id": 5,
+      "prompt": "分析这个logcat，找出所有严重的错误（FATAL EXCEPTION、Fatal signal等），从最新的时间开始往回找5分钟",
+      "expected_output": "应该使用从后往前找策略，按优先级搜索：P0（应用死亡、系统杀死信号）、P1（Java Fatal异常、Native崩溃）、P2（ANR、内存问题），生成结构化的分析报告。",
+      "files": []
+    }
+  ]
+}
