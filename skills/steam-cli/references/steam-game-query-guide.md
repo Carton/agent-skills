@@ -6,6 +6,7 @@ Steam Query (`steam-game-query`) is a command-line tool for querying detailed in
 
 - [Installation](#installation)
 - [Core Commands](#core-commands)
+- [Install Size Helper](#install-size-helper)
 - [Configuration](#configuration)
 - [Output Formats](#output-formats)
 - [Use Cases](#use-cases)
@@ -179,6 +180,24 @@ Celeste
   ]
 }
 ```
+
+## Install Size Helper
+
+`steam-game-query` does not expose installation size. Use the skill's bundled helper to read the
+publisher-declared `Storage` value from Steam's PC system requirements:
+
+```bash
+# Run from the steam-cli skill directory
+python3 scripts/get_install_size.py 1113000
+python3 scripts/get_install_size.py 2612950 --json
+```
+
+The helper requires no third-party Python packages, API key, or Steam login. If the requested App ID
+is DLC and has no requirements of its own, it follows `fullgame.appid` and labels the base game's
+value as inherited.
+
+This value is a free-space estimate from the store page. Do not present it as an exact depot download
+size or post-install byte count; those vary by platform, language, branch, and selected DLC.
 
 ## Configuration
 

@@ -1,14 +1,15 @@
 ---
 name: steam-cli
-description: Steam game library management CLI tools. Use when user wants to manage their Steam library (browse, filter, search, find unplayed games, check playtime) or query Steam store game information (search games, get detailed info, check prices). Covers both user library management (steam-games-cli) and store game queries (steam-game-query).
+description: Steam game library management and store-query CLI tools. Use when the user wants to manage their Steam library (browse, filter, search, find unplayed games, check playtime), query Steam store information (search games, get details, check prices), or estimate a game's required installation disk space by App ID. Covers steam-games-cli, steam-game-query, and a bundled install-size helper.
 ---
 
 # Steam CLI Tools
 
-This skill provides guidance for two complementary Steam CLI tools:
+This skill provides guidance for two complementary Steam CLI tools and one bundled helper:
 
 1. **steam-games-cli** - Manage your personal Steam game library
 2. **steam-game-query** - Query Steam store game information (no login required)
+3. **get_install_size.py** - Estimate publisher-declared required disk space by App ID
 
 ## When to Use Each Tool
 
@@ -27,6 +28,11 @@ This skill provides guidance for two complementary Steam CLI tools:
 - Querying game details without Steam login
 - Batch querying multiple games
 - Researching games before purchase
+
+### Use get_install_size.py when:
+- Estimating required free disk space before installation
+- Looking up a storage requirement by Steam App ID
+- Resolving a DLC's requirement through its base game
 
 ## Quick Reference
 
@@ -64,6 +70,16 @@ steam-query lookup -q "Hollow Knight"        # Search and lookup by name
 steam-query batch "Game1" "Game2" -o out.json  # Batch query
 ```
 
+### Install Size Estimate
+
+Requires: Python 3.10+, no third-party packages or Steam login
+
+```bash
+# Run from the steam-cli skill directory
+python3 scripts/get_install_size.py 1113000
+python3 scripts/get_install_size.py 2612950 --json
+```
+
 ## Decision Guide
 
 | Task | Tool |
@@ -74,6 +90,7 @@ steam-query batch "Game1" "Game2" -o out.json  # Batch query
 | "Check price of a game" | steam-game-query |
 | "Get my playtime stats" | steam-games-cli |
 | "Get game details (developer, genres, etc.)" | steam-game-query |
+| "Estimate required installation disk space" | get_install_size.py |
 | "Filter my library by reviews" | steam-games-cli |
 | "Compare regional pricing" | steam-game-query |
 
@@ -132,6 +149,24 @@ steam-query lookup -q "Game Name"
 # Batch check multiple games from other platforms
 steam-query batch -i epic_games.txt -o steam_equivalent.json
 ```
+
+### Workflow 5: Estimate Required Disk Space
+
+Use the bundled helper with a numeric App ID:
+
+```bash
+python3 scripts/get_install_size.py 1113000
+```
+
+For DLC without its own PC requirements, the helper follows Steam's `fullgame.appid` and reports
+the base game's requirement as inherited:
+
+```bash
+python3 scripts/get_install_size.py 2612950
+```
+
+Treat the result as publisher-declared free-space guidance. It is not the current depot download
+size or an exact post-install byte count, which can vary by platform, language, branch, and DLC.
 
 ## Installation
 
@@ -241,3 +276,10 @@ For comprehensive command reference and advanced usage:
 | `steam-query lookup -q "name"` | Search and lookup by name |
 | `steam-query batch games... -o out.json` | Query multiple games |
 | `steam-query lookup <id> --country US` | Query with regional pricing |
+
+### Install-size helper
+
+| Command | Description |
+|---------|-------------|
+| `python3 scripts/get_install_size.py <app_id>` | Show publisher-declared required free space |
+| `python3 scripts/get_install_size.py <app_id> --json` | Return the estimate and source as JSON |
