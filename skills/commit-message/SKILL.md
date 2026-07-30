@@ -81,6 +81,21 @@ For breaking changes, include a footer:
 BREAKING CHANGE: <impact and migration path>
 ```
 
+## Shell Commit Construction
+
+When creating a commit from a shell, preserve real line breaks in the body.
+An ordinary quoted argument such as `-m "first line\\nsecond line"` passes a
+literal backslash and `n` to Git in common POSIX shells; it does not create a
+new line. For Bash or Zsh, prefer ANSI-C quoting for a multi-line body:
+
+```bash
+git commit -m "fix(scope): summary" -m $'First body line\nSecond body line'
+```
+
+Alternatively, write the message to a file and pass it with `git commit -F`.
+After every commit with a body, verify it with `git show -s --format=%B HEAD`.
+If its output contains a literal `\\n`, amend the message before proceeding.
+
 ## Examples
 
 ```text
