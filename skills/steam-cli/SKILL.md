@@ -1,25 +1,31 @@
 ---
 name: steam-cli
-description: Steam game library management and store-query CLI tools. Use when the user wants to manage their Steam library (browse, filter, search, find unplayed games, check playtime), query Steam store information (search games, get details, check prices), or estimate a game's required installation disk space by App ID. Covers steam-games-cli, steam-game-query, and a bundled install-size helper.
+description: Steam game library management and store-query CLI tools. Use when the user wants to export or manage their self-owned Steam games (browse, filter, search, find unplayed games, check playtime), query Steam store information (search games, get details, check prices), or estimate a game's required installation disk space by App ID. Covers steam-games-cli, steam-game-query, explicit-config library export, and a bundled install-size helper.
 ---
 
 # Steam CLI Tools
 
-This skill provides guidance for two complementary Steam CLI tools and one bundled helper:
+This skill provides guidance for two complementary Steam CLI tools and two bundled helpers:
 
-1. **steam-games-cli** - Manage your personal Steam game library
+1. **steam-games-cli** - Manage the self-owned games returned by Steam Web API
 2. **steam-game-query** - Query Steam store game information (no login required)
-3. **get_install_size.py** - Estimate publisher-declared required disk space by App ID
+3. **export_owned_games.py** - Export a complete self-owned library from an explicit config
+4. **get_install_size.py** - Estimate publisher-declared required disk space by App ID
 
 ## When to Use Each Tool
 
 ### Use steam-games-cli when:
-- Browsing your own game library
+- Browsing the self-owned games visible through Steam Web API
 - Finding unplayed games in your collection
 - Checking playtime statistics
 - Filtering games by review scores
 - Managing Steam Deck playtime tracking
 - Getting user profile statistics
+
+### Use export_owned_games.py when:
+- Exporting every API-visible self-owned game to JSON or CSV
+- Selecting a specific `steam-games-cli` config without changing global configuration
+- Verifying that Steam's reported `game_count` matches the returned game list
 
 ### Use steam-game-query when:
 - Searching for games on the Steam store
@@ -50,9 +56,27 @@ steam config set-user YOUR_STEAM_ID
 
 # Common commands
 steam whoami                    # Show profile stats
-steam library                   # List all games
+steam library                   # List API-visible self-owned games
 steam library --unplayed        # Find unplayed games
 steam library --sort playtime   # Most played games
+```
+
+`GetOwnedGames` does not include Steam Families shared games. Do not describe its result as the
+complete playable library when family sharing may be involved.
+
+### Explicit-Config Library Export
+
+Requires: Python 3.10+, a `steam-games-cli` config containing `apiKey` and `steamId`
+
+```bash
+# Run from the steam-cli skill directory
+python3 scripts/export_owned_games.py --format csv --output steam-games.csv
+
+# Select another environment's config without overwriting the default config
+python3 scripts/export_owned_games.py \
+  --config /path/to/.steam-cli/config.json \
+  --format json \
+  --output steam-games.json
 ```
 
 ### steam-game-query (Store Queries)
@@ -84,7 +108,8 @@ python3 scripts/get_install_size.py 2612950 --json
 
 | Task | Tool |
 |------|------|
-| "Show my games" | steam-games-cli |
+| "Show my self-owned games" | steam-games-cli |
+| "Export all owned games from a specific config" | export_owned_games.py |
 | "Find unplayed games in my library" | steam-games-cli |
 | "Search Steam store for games" | steam-game-query |
 | "Check price of a game" | steam-game-query |
@@ -130,11 +155,14 @@ steam whoami
 ### Workflow 3: Batch Export Your Library
 
 ```bash
-# Export your library as JSON
-steam library --json > my_library.json
+# Export from the default config
+python3 scripts/export_owned_games.py --output my_library.json
 
-# Find games you might want to replay
-steam library --min-hours 2 --max-hours 20 --show-reviews
+# Export from an explicit config without changing `steam config`
+python3 scripts/export_owned_games.py \
+  --config /path/to/.steam-cli/config.json \
+  --format csv \
+  --output my_library.csv
 ```
 
 ### Workflow 4: Compare Store vs Your Library
@@ -232,6 +260,12 @@ For comprehensive command reference and advanced usage:
 **Empty game list:**
 - Ensure Steam profile "Game details" is set to Public
 - Verify API key: `steam config show`
+
+**Game count is unexpectedly small:**
+- Run `steam whoami` and verify the displayed SteamID before trusting the export
+- Check for separate config files across WSL, Linux, and Windows
+- Use `scripts/export_owned_games.py --config PATH` to select the intended config explicitly
+- Remember that `GetOwnedGames` returns self-owned games, not Steam Families shared games
 
 **Slow review fetching:**
 - Apply other filters first to reduce API calls

@@ -52,11 +52,14 @@ The Steam ID can be found in the URL of your Steam profile (e.g., `7656119801234
 }
 ```
 
-**Environment variables**:
+**API key environment variable**:
 ```bash
 export STEAM_API_KEY="YOUR_API_KEY"
-export STEAM_USER="YOUR_STEAM_ID"
 ```
+
+The installed CLI does not read a SteamID environment variable. Use `steam config set-user`, or use
+the bundled `scripts/export_owned_games.py --config PATH` helper when selecting among multiple
+config files.
 
 ## Privacy Requirements
 
@@ -67,6 +70,9 @@ The Steam profile's "Game details" must be set to Public:
 3. Save changes
 
 **Note**: This is required for the Steam Web API to access your library information.
+
+`IPlayerService/GetOwnedGames` returns self-owned games. It does not enumerate games playable only
+through Steam Families.
 
 ## Commands
 
@@ -251,14 +257,16 @@ Config is stored in:
 - Linux/Mac: `~/.steam-cli/config.json`
 - Windows: `%USERPROFILE%\.steam-cli\config.json`
 
-### Environment Variables
+### Environment Variable
 
-Environment variables override config file settings:
+The API key environment variable overrides the key in the config file:
 
 ```bash
 export STEAM_API_KEY="YOUR_API_KEY"
-export STEAM_USER="YOUR_STEAM_ID"
 ```
+
+Select a different SteamID with `steam config set-user`, or avoid changing global configuration by
+passing its config file to `scripts/export_owned_games.py`.
 
 ## Use Cases
 
@@ -288,14 +296,17 @@ steam library --min-hours 2 --max-hours 50 --min-reviews 7 --show-reviews
 
 ### Use Case 4: Export Library
 
-Export your library for analysis:
+Export all self-owned games for analysis:
 
 ```bash
-# Export as JSON
-steam library --json > my_library.json
+# Export from the default config
+python3 scripts/export_owned_games.py --output my_library.json
 
-# Count games by review score
-steam library --json | jq '.[] | group_by(.review_score) | map({score: .[0].review_score, count: length})'
+# Export another environment's config without overwriting the default
+python3 scripts/export_owned_games.py \
+  --config /path/to/.steam-cli/config.json \
+  --format csv \
+  --output my_library.csv
 ```
 
 ### Use Case 5: Statistics
@@ -372,6 +383,17 @@ Apply other filters (playtime, unplayed, deck) before using review filters to re
    - Visit: https://steamcommunity.com/my/edit/settings
 2. Verify API key is correctly configured: `steam config show`
 3. Check Steam ID is correct (should be numeric, e.g., `76561198012345678`)
+
+### Unexpectedly Small Game List
+
+**Symptom**: the Steam client shows many more games than `steam library`
+
+**Solutions**:
+1. Run `steam whoami` and verify the displayed SteamID
+2. Check whether WSL, Linux, and Windows have different `.steam-cli/config.json` files
+3. Use `scripts/export_owned_games.py --config PATH` to select the intended config explicitly
+4. Treat the result as self-owned games only; Steam Families shared games require an authenticated
+   Steam client session and are not returned by `GetOwnedGames`
 
 ### Review Fetching is Slow
 
