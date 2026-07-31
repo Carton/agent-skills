@@ -35,6 +35,11 @@ process as `BILIBILI_COOKIE`. This can reveal login-only AI subtitle tracks.
 Never print, persist, or place the cookie in the note. The manifest records only
 whether a cookie was configured.
 
+An empty anonymous subtitle response does not prove that a video has no official
+or AI subtitle track. Before choosing OCR or ASR, retry with `BILIBILI_COOKIE`
+when the user has chosen to provide one; otherwise record the authentication
+limitation in the note.
+
 ## Workflow
 
 ### 1. Prepare once

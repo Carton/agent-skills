@@ -157,11 +157,16 @@ def choose_subtitle(items: list[dict[str, Any]]) -> dict[str, Any] | None:
 
     def score(item: dict[str, Any]) -> tuple[int, int, int]:
         language = str(item.get("lan") or "")
+        is_ai = bool(item.get("ai_type"))
         try:
             rank = priorities.index(language)
         except ValueError:
             rank = len(priorities)
-        return rank, 1 if item.get("ai_type") else 0, 1 if item.get("is_lock") else 0
+        if rank < len(priorities):
+            source_rank = 1 if is_ai else 0
+        else:
+            source_rank = 3 if is_ai else 2
+        return source_rank, rank, 1 if item.get("is_lock") else 0
 
     return sorted(items, key=score)[0]
 
@@ -742,6 +747,7 @@ def command_probe(args: argparse.Namespace) -> None:
     player = player_data(metadata)
     subtitle_items = ((player.get("subtitle") or {}).get("subtitles") or [])
     selected = choose_subtitle(subtitle_items)
+    cookie_configured = bool(os.environ.get("BILIBILI_COOKIE", "").strip())
     manifest: dict[str, Any] = {
         "metadata": metadata,
         "official_subtitles": [
@@ -753,7 +759,7 @@ def command_probe(args: argparse.Namespace) -> None:
             }
             for row in subtitle_items
         ],
-        "bilibili_cookie_configured": bool(os.environ.get("BILIBILI_COOKIE", "").strip()),
+        "bilibili_cookie_configured": cookie_configured,
         "source_type": "official_subtitle" if selected else "undetermined",
         "next_action": "use_transcript" if selected else "prepare_media",
     }
@@ -777,8 +783,25 @@ def command_probe(args: argparse.Namespace) -> None:
         output_dir / "next-action.json",
         {
             "action": manifest["next_action"],
-            "reason": "official_subtitle_found" if selected else "official_subtitle_absent",
+            "reason": (
+                "official_subtitle_found"
+                if selected
+                else (
+                    "official_subtitle_absent"
+                    if cookie_configured
+                    else "subtitle_not_visible_anonymously"
+                )
+            ),
             "inspect": "transcript.md" if selected else None,
+            "warning": (
+                None
+                if selected or cookie_configured
+                else (
+                    "Bilibili may hide AI or CC subtitle tracks without login. "
+                    "Retry with a user-supplied BILIBILI_COOKIE before concluding "
+                    "that no official subtitle exists."
+                )
+            ),
         },
     )
     say(f"输出：{output_dir}")
@@ -791,6 +814,13 @@ def command_prepare(args: argparse.Namespace) -> None:
     manifest = read_json(output_dir / "manifest.json")
     if manifest["source_type"] == "official_subtitle":
         return
+    missing_media_tools = [
+        name for name in ("ffmpeg", "ffprobe") if not shutil.which(name)
+    ]
+    if missing_media_tools:
+        raise PipelineError(
+            "继续下载媒体前需要安装：" + ", ".join(missing_media_tools)
+        )
     metadata = manifest["metadata"]
     play = fresh_playurl(metadata)
     dash = play.get("dash") or {}
@@ -1387,11 +1417,14 @@ def run_colab_transcription(
     worker = Path(__file__).with_name("colab_faster_whisper.py")
     if not worker.exists():
         raise PipelineError(f"缺少 Colab 转录脚本：{worker}")
+    colab_env = os.environ.copy()
+    colab_env.pop("BILIBILI_COOKIE", None)
     session = args.colab_session
     status = run(
         colab_command(args.colab_auth, "status", "-s", session),
         check=False,
         capture=True,
+        env=colab_env,
     )
     created_session = status.returncode != 0
     if created_session:
@@ -1404,7 +1437,8 @@ def run_colab_transcription(
                 session,
                 "--gpu",
                 args.colab_gpu,
-            )
+            ),
+            env=colab_env,
         )
     else:
         say(f"复用 Colab 会话：{session}")
@@ -1431,7 +1465,8 @@ def run_colab_transcription(
                 session,
                 str(audio),
                 COLAB_REMOTE_AUDIO,
-            )
+            ),
+            env=colab_env,
         )
         run(
             colab_command(
@@ -1441,7 +1476,8 @@ def run_colab_transcription(
                 session,
                 str(payload_path),
                 COLAB_REMOTE_INPUT,
-            )
+            ),
+            env=colab_env,
         )
         run(
             colab_command(
@@ -1450,7 +1486,8 @@ def run_colab_transcription(
                 "-s",
                 session,
                 *COLAB_ASR_PACKAGES,
-            )
+            ),
+            env=colab_env,
         )
         say(
             f"使用 Colab {args.colab_gpu} 上的 Faster Whisper {args.model} 转写…"
@@ -1465,7 +1502,8 @@ def run_colab_transcription(
                 str(args.colab_timeout),
                 "-f",
                 str(worker),
-            )
+            ),
+            env=colab_env,
         )
         run(
             colab_command(
@@ -1475,7 +1513,8 @@ def run_colab_transcription(
                 session,
                 COLAB_REMOTE_OUTPUT,
                 str(raw_output),
-            )
+            ),
+            env=colab_env,
         )
     finally:
         for remote_path in (
@@ -1492,12 +1531,14 @@ def run_colab_transcription(
                     remote_path,
                 ),
                 check=False,
+                env=colab_env,
             )
         if created_session and not args.keep_colab_session:
             say(f"释放本次创建的 Colab 会话：{session}")
             run(
                 colab_command(args.colab_auth, "stop", "-s", session),
                 check=False,
+                env=colab_env,
             )
 
     if not raw_output.exists():
