@@ -150,6 +150,11 @@ def page_info(view_data: dict[str, Any], page: int) -> dict[str, Any]:
     return pages[page - 1]
 
 
+def subtitle_is_ai(item: dict[str, Any]) -> bool:
+    language = str(item.get("lan") or "")
+    return bool(item.get("ai_type")) or language.startswith("ai-")
+
+
 def choose_subtitle(items: list[dict[str, Any]]) -> dict[str, Any] | None:
     if not items:
         return None
@@ -157,7 +162,7 @@ def choose_subtitle(items: list[dict[str, Any]]) -> dict[str, Any] | None:
 
     def score(item: dict[str, Any]) -> tuple[int, int, int]:
         language = str(item.get("lan") or "")
-        is_ai = bool(item.get("ai_type"))
+        is_ai = subtitle_is_ai(item)
         try:
             rank = priorities.index(language)
         except ValueError:
@@ -756,6 +761,7 @@ def command_probe(args: argparse.Namespace) -> None:
                 "label": row.get("lan_doc"),
                 "id": row.get("id"),
                 "ai_type": row.get("ai_type"),
+                "is_ai": subtitle_is_ai(row),
             }
             for row in subtitle_items
         ],
@@ -773,6 +779,7 @@ def command_probe(args: argparse.Namespace) -> None:
             "language": selected.get("lan"),
             "label": selected.get("lan_doc"),
             "ai_type": selected.get("ai_type"),
+            "is_ai": subtitle_is_ai(selected),
             "segment_count": len(segments),
         }
         say(f"发现官方字幕：{selected.get('lan_doc') or selected.get('lan')}")
@@ -1419,6 +1426,7 @@ def run_colab_transcription(
         raise PipelineError(f"缺少 Colab 转录脚本：{worker}")
     colab_env = os.environ.copy()
     colab_env.pop("BILIBILI_COOKIE", None)
+    colab_env.setdefault("OAUTHLIB_RELAX_TOKEN_SCOPE", "1")
     session = args.colab_session
     status = run(
         colab_command(args.colab_auth, "status", "-s", session),
@@ -1426,7 +1434,8 @@ def run_colab_transcription(
         capture=True,
         env=colab_env,
     )
-    created_session = status.returncode != 0
+    status_text = "\n".join((status.stdout or "", status.stderr or "")).lower()
+    created_session = status.returncode != 0 or "not found" in status_text
     if created_session:
         say(f"创建 Colab {args.colab_gpu} 会话：{session}…")
         run(

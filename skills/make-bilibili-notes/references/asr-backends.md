@@ -28,6 +28,16 @@ colab --auth=oauth2 stop -s bili-asr-setup
 The first OAuth2 command may open a browser. Never copy authentication tokens,
 session metadata, or Bilibili cookies into a work directory or note.
 
+If `colab install` or `colab exec` raises `jupyter_kernel_client` missing
+`KernelClient`, the PyPI tool resolved the wrong same-named dependency. Replace
+it with the source required by the official Colab CLI project, then retry:
+
+```bash
+uv pip install \
+  --python ~/.local/share/uv/tools/google-colab-cli/bin/python \
+  git+https://github.com/googlecolab/jupyter-kernel-client.git
+```
+
 ## Session lifecycle
 
 The `transcribe --backend colab` command uses this lifecycle:
@@ -59,3 +69,25 @@ colab --auth=oauth2 stop -s bili-asr
 
 If remote execution fails, report the Colab failure. Do not automatically start
 a potentially multi-hour CPU transcription without the user's knowledge.
+
+## Why Faster Whisper is the current baseline
+
+Faster Whisper is used here for engineering maturity rather than a claim that it
+has the best Chinese character error rate. It provides one lightweight local and
+Colab implementation, stable segment timestamps, VAD, glossary prompting, and a
+well-understood T4 memory profile. Use `large-v3` for Chinese Colab work; `small`
+is a speed probe and can corrupt idioms or domain terms.
+
+Chinese-focused alternatives are worth benchmarking on representative clips:
+
+- FunASR `paraformer-zh` provides Chinese/English recognition, timestamps, and
+  hotwords with a much smaller model, but its PyTorch/ModelScope dependency set
+  can restart a live Colab CLI kernel during installation.
+- Qwen3-ASR supports Chinese dialects and strong long-audio recognition. Its ASR
+  model does not by itself provide the timestamped segments required by this
+  skill; the official timestamp path also loads Qwen3-ForcedAligner.
+
+Do not add or select either backend solely from published benchmark tables.
+First verify install stability, timestamp normalization, cleanup, and transcript
+quality on the same audio sample. Until then, label it as an unvalidated
+alternative rather than silently changing the source pipeline.

@@ -211,4 +211,6 @@ or the video's own citation is not independent validation.
   into the skill cache.
 - Colab is unauthenticated or unavailable: run `colab --auth=oauth2 new`, verify
   `colab status`, stop the test session, then retry. Do not silently fall back to
-  a multi-hour local CPU job.
+  a multi-hour local CPU job. If OAuth reports that Google returned a narrower
+  scope, retry once with `OAUTHLIB_RELAX_TOKEN_SCOPE=1`; the skill applies this
+  compatibility setting to its own Colab subprocesses.
