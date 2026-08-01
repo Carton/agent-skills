@@ -120,8 +120,14 @@ fast local GPU, prefer the official Google Colab CLI backend:
 ```bash
 python3 "$SKILL_DIR/scripts/bili_video.py" transcribe "WORKDIR" \
   --backend colab --model large-v3 --colab-gpu T4 \
-  --glossary "TERM1,TERM2"
+  --language SOURCE_LANGUAGE --glossary "TERM1,TERM2"
 ```
+
+Confirm the source language by listening to the opening audio; slide text is only
+a clue (slides and narration may use different languages). Then pass
+`--language SOURCE_LANGUAGE` explicitly (`en` for English or `zh` for Chinese).
+Do not rely on the CLI default: a wrong language constraint can cause
+hallucinations and spelling errors. Build the glossary after this check.
 
 The command reuses a named active session, installs Faster Whisper remotely,
 uploads only the audio and a non-secret job manifest, downloads timestamped
@@ -133,7 +139,8 @@ local:
 
 ```bash
 python3 "$SKILL_DIR/scripts/bili_video.py" transcribe "WORKDIR" \
-  --backend local --model small --bootstrap-asr --glossary "TERM1,TERM2"
+  --backend local --model small --bootstrap-asr --language SOURCE_LANGUAGE \
+  --glossary "TERM1,TERM2"
 ```
 
 The script reuses a cached Faster Whisper environment and model, uses CPU `int8`,
