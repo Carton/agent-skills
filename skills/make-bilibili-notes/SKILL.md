@@ -43,12 +43,23 @@ python3 "$SKILL_DIR/scripts/bili_video.py" auth-check --service bilibili
 python3 "$SKILL_DIR/scripts/bili_video.py" auth-check --service colab
 ```
 
-These checks emit redacted JSON and never print cookies, tokens, or account
-identities. Bilibili login is optional: if it is not configured, tell the user
-that official/AI subtitles may be hidden and let them choose whether to configure
-it or continue anonymously. Colab authentication is required only when Colab is
-selected. Account login and OAuth consent are human setup steps; do not search
-for credentials or perform them silently.
+At task preflight, ask once whether Colab may be used if audio ASR becomes
+necessary. Explain that this uploads the normalized WAV, a non-secret job
+manifest, and the bundled transcription worker to the user's Google Colab
+runtime; remote job files are removed afterward. Offer two choices: authorize
+Colab for this video, or keep the audio local. Translate this disclosure into the
+user's language.
+
+If the user authorizes Colab, validate its account now and remember the choice
+for this task. Later pass `--confirm-external-upload` without asking again. If the
+user declines, never call the Colab backend. A direct, informed request to use
+Colab for the current video also counts as this confirmation.
+
+The checks emit redacted JSON and never print cookies, tokens, or account
+identities. A missing optional Bilibili cookie returns `can_continue: true` so
+the anonymous path remains usable. Colab authentication is required only when
+Colab is selected. Account login and OAuth consent are human setup steps; do not
+search for credentials or perform them silently.
 
 If the user has supplied a Bilibili login cookie, expose it only for this
 process as `BILIBILI_COOKIE`. This can reveal login-only AI subtitle tracks.
@@ -140,6 +151,7 @@ fast local GPU, prefer the official Google Colab CLI backend:
 ```bash
 python3 "$SKILL_DIR/scripts/bili_video.py" transcribe "WORKDIR" \
   --backend colab --model large-v3 --colab-gpu T4 \
+  --confirm-external-upload \
   --language SOURCE_LANGUAGE --glossary "TERM1,TERM2"
 ```
 
@@ -154,9 +166,10 @@ uploads only the audio and a non-secret job manifest, downloads timestamped
 JSON, and stops a session it created. Add `--keep-colab-session` only when more
 videos will be processed immediately.
 
-Before this upload, explicitly tell the user that audio will be sent to Google
-Colab and obtain approval. Colab OAuth setup does not by itself grant upload
-approval to the agent.
+Pass `--confirm-external-upload` only after the task preflight choice above. That
+choice is sufficient for the current video, so do not interrupt the workflow to
+ask again immediately before upload. Colab OAuth setup does not itself count as
+this per-video confirmation.
 
 Use local CPU/CUDA only when Colab is unavailable or the user asks to keep audio
 local:
@@ -240,8 +253,9 @@ or the video's own citation is not independent validation.
   back to bounded contact sheets if recognition remains poor.
 - Missing Faster Whisper or proxy SOCKS support: `--bootstrap-asr` installs both
   into the skill cache.
-- Colab is unauthenticated or unavailable: run `colab --auth=oauth2 new`, verify
-  `colab status`, stop the test session, then retry. Do not silently fall back to
-  a multi-hour local CPU job. If OAuth reports that Google returned a narrower
-  scope, retry once with `OAUTHLIB_RELAX_TOKEN_SCOPE=1`; the skill applies this
-  compatibility setting to its own Colab subprocesses.
+- Colab is unauthenticated or unavailable: run `colab --auth=oauth2 whoami`, then
+  `auth-check --service colab`; read [references/setup.md](references/setup.md)
+  when consent must be refreshed. Do not silently fall back to a multi-hour local
+  CPU job. If OAuth reports that Google returned a narrower scope, retry once with
+  `OAUTHLIB_RELAX_TOKEN_SCOPE=1`; the skill applies this compatibility setting to
+  its own Colab subprocesses.

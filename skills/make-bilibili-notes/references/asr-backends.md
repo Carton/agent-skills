@@ -17,8 +17,8 @@ availability depends on the user's Colab plan, quota, and current capacity.
 ## One-time Colab setup
 
 Read [setup.md](setup.md) first. Authentication and external audio upload are
-separate approvals: validate OAuth before the task, then obtain explicit user
-approval before uploading that task's audio.
+separate decisions: validate OAuth during setup, and record the user's informed
+Colab choice once during task preflight.
 
 Install the official Linux CLI in WSL:
 
@@ -45,7 +45,16 @@ uv pip install \
 
 ## Session lifecycle
 
-The `transcribe --backend colab` command uses this lifecycle:
+After preflight approval, include `--confirm-external-upload`. Without it the
+command exits before creating or reusing a session:
+
+```bash
+python3 "$SKILL_DIR/scripts/bili_video.py" transcribe "WORKDIR" \
+  --backend colab --confirm-external-upload \
+  --model large-v3 --language SOURCE_LANGUAGE
+```
+
+The confirmed `transcribe --backend colab` command uses this lifecycle:
 
 1. Reuse `--colab-session` when it already exists.
 2. Otherwise create the requested GPU session.

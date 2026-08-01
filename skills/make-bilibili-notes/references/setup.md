@@ -13,6 +13,26 @@ configuration separate from a video work directory.
 - Never paste a cookie or token into `SKILL.md`, a note, a work directory, a
   repository file, a command-line argument, or an agent message.
 
+## Per-task Colab choice
+
+Account setup is reusable, but upload authorization belongs to the current
+video. During task preflight, ask once in the user's language:
+
+> If subtitles are unavailable, may I use your Google Colab runtime for ASR?
+> This sends the normalized WAV, a non-secret job manifest, and the bundled
+> transcription worker to Colab, then removes the remote job files. Choose
+> **Colab for this video** or **keep audio local**.
+
+When the user chooses Colab, validate the account immediately and retain that
+choice in the current task context. The eventual command must include
+`--confirm-external-upload`; the flag makes the non-interactive CLI path explicit
+and prevents a second conversational prompt. If the user runs the command
+directly, adding the flag is their confirmation for that invocation.
+
+Do not persist this per-video decision in `AGENTS.md`, global configuration, or
+the skill. If the user declines, select local ASR or stop before a potentially
+long CPU job.
+
 ## Optional Bilibili login
 
 Anonymous access remains supported, but Bilibili may hide official or AI
@@ -61,6 +81,9 @@ colab --auth=oauth2 whoami
 python3 "$SKILL_DIR/scripts/bili_video.py" auth-check --service colab
 ```
 
+For an existing Application Default Credentials setup, validate the same path
+with `auth-check --service colab --colab-auth adc`.
+
 The CLI caches the OAuth2 refresh token at
 `~/.config/colab-cli/token.json`. The skill never copies that file into its cache
 or a work directory. Current Colab CLI authentication design and required scopes
@@ -93,10 +116,11 @@ colab --auth=oauth2 status -s bili-asr-setup
 colab --auth=oauth2 stop -s bili-asr-setup
 ```
 
-## OAuth consent is not upload consent
+## OAuth consent and per-task confirmation
 
 OAuth authorizes the CLI to manage Colab sessions. It does not authorize an
-agent to send a user's audio to Google. Before `transcribe --backend colab`, tell
-the user that the normalized audio and a non-secret job manifest will be
-uploaded, and obtain explicit approval. If approval is declined, keep the audio
-local or stop; do not silently switch to a multi-hour CPU transcription.
+agent to send a specific video's audio to Google. Obtain the informed choice once
+during task preflight, then pass `--confirm-external-upload` when the Colab path
+is actually needed. Do not ask again for the same task. If approval is declined,
+keep the audio local or stop; do not silently switch to a multi-hour CPU
+transcription.

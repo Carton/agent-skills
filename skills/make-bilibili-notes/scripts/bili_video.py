@@ -1410,7 +1410,7 @@ def colab_command(auth: str, *parts: str) -> list[str]:
     if not executable:
         raise PipelineError(
             "未找到 Google Colab CLI。请先运行 `uv tool install google-colab-cli`，"
-            "再用 `colab --auth=oauth2 new` 完成首次授权。"
+            "再用 `colab --auth=oauth2 whoami` 完成首次授权。"
         )
     return [executable, f"--auth={auth}", *parts]
 
@@ -1561,6 +1561,12 @@ def run_colab_transcription(
 
 
 def command_transcribe(args: argparse.Namespace) -> None:
+    if args.backend == "colab" and not args.confirm_external_upload:
+        raise PipelineError(
+            "Colab 会上传规范化 WAV、非秘密任务清单和转写 worker。"
+            "请先在任务 preflight 中取得用户授权，再添加 "
+            "`--confirm-external-upload`。"
+        )
     workdir = Path(args.workdir).resolve()
     manifest_path = workdir / "manifest.json"
     manifest = read_json(manifest_path) if manifest_path.exists() else {}
@@ -1668,6 +1674,7 @@ def command_transcribe(args: argparse.Namespace) -> None:
         "language": raw.get("language"),
         "language_probability": raw.get("language_probability"),
         "initial_prompt": initial_prompt,
+        "external_upload_confirmed": args.backend == "colab",
         **backend_details,
     }
     write_json(manifest_path, manifest)
@@ -1751,8 +1758,9 @@ def bilibili_auth_status() -> dict[str, Any]:
             "next_action": "Set BILIBILI_COOKIE for this process, then retry.",
         }
     try:
-        payload = get_json(api_url("/x/web-interface/nav"), retries=1)
-    except PipelineError:
+        with request(api_url("/x/web-interface/nav"), timeout=15) as response:
+            payload = json.load(response)
+    except (OSError, TypeError, ValueError):
         return {
             "status": "unreachable",
             "configured": True,
@@ -1761,7 +1769,27 @@ def bilibili_auth_status() -> dict[str, Any]:
                 "Check network access, then retry without printing the cookie."
             ),
         }
-    authenticated = bool((payload.get("data") or {}).get("isLogin"))
+    if not isinstance(payload, dict):
+        return {
+            "status": "unreachable",
+            "configured": True,
+            "authenticated": False,
+            "next_action": "Retry after checking the Bilibili API response.",
+        }
+    code = payload.get("code")
+    data = payload.get("data")
+    if not isinstance(data, dict):
+        data = {}
+    authenticated = bool(data.get("isLogin"))
+    if code not in (None, 0, -101):
+        return {
+            "status": "api_error",
+            "configured": True,
+            "authenticated": False,
+            "next_action": (
+                "Unset BILIBILI_COOKIE to continue anonymously, or retry later."
+            ),
+        }
     return {
         "status": "ready" if authenticated else "invalid",
         "configured": True,
@@ -1774,7 +1802,7 @@ def bilibili_auth_status() -> dict[str, Any]:
     }
 
 
-def colab_auth_status() -> dict[str, Any]:
+def colab_auth_status(auth: str) -> dict[str, Any]:
     executable = shutil.which("colab")
     if not executable:
         return {
@@ -1784,7 +1812,7 @@ def colab_auth_status() -> dict[str, Any]:
             "next_action": "Install google-colab-cli, then complete OAuth2 setup.",
         }
     token_path = Path.home() / ".config" / "colab-cli" / "token.json"
-    if not token_path.exists():
+    if auth == "oauth2" and not token_path.exists():
         return {
             "status": "not_configured",
             "configured": False,
@@ -1795,7 +1823,7 @@ def colab_auth_status() -> dict[str, Any]:
     colab_env.pop("BILIBILI_COOKIE", None)
     try:
         result = subprocess.run(
-            [executable, "--auth=oauth2", "whoami"],
+            [executable, f"--auth={auth}", "whoami"],
             check=False,
             text=True,
             stdin=subprocess.DEVNULL,
@@ -1838,16 +1866,26 @@ def command_auth_check(args: argparse.Namespace) -> int:
     if args.service in ("all", "bilibili"):
         checks["bilibili"] = bilibili_auth_status()
     if args.service in ("all", "colab"):
-        checks["colab"] = colab_auth_status()
+        checks["colab"] = colab_auth_status(args.colab_auth)
     ready = all(item["status"] == "ready" for item in checks.values())
+    can_continue = all(
+        item["status"] == "ready"
+        or (service == "bilibili" and item["status"] == "not_configured")
+        for service, item in checks.items()
+    )
     print(
         json.dumps(
-            {"service": args.service, "ready": ready, "checks": checks},
+            {
+                "service": args.service,
+                "ready": ready,
+                "can_continue": can_continue,
+                "checks": checks,
+            },
             ensure_ascii=False,
             indent=2,
         )
     )
-    return 0 if ready else 2
+    return 0 if can_continue else 2
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -1865,7 +1903,12 @@ def build_parser() -> argparse.ArgumentParser:
     auth_check.add_argument(
         "--service",
         choices=("all", "bilibili", "colab"),
-        default="all",
+        required=True,
+    )
+    auth_check.add_argument(
+        "--colab-auth",
+        choices=("oauth2", "adc"),
+        default="oauth2",
     )
 
     probe = subparsers.add_parser("probe", help="Fetch metadata and official subtitles.")
@@ -1932,6 +1975,7 @@ def build_parser() -> argparse.ArgumentParser:
     transcribe.add_argument("--colab-compute-type", default="int8_float16")
     transcribe.add_argument("--colab-timeout", type=int, default=7200)
     transcribe.add_argument("--keep-colab-session", action="store_true")
+    transcribe.add_argument("--confirm-external-upload", action="store_true")
 
     finalize = subparsers.add_parser(
         "finalize",
