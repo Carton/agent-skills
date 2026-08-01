@@ -1742,6 +1742,114 @@ def command_doctor(_: argparse.Namespace) -> None:
     print(json.dumps(payload, ensure_ascii=False, indent=2))
 
 
+def bilibili_auth_status() -> dict[str, Any]:
+    if not os.environ.get("BILIBILI_COOKIE", "").strip():
+        return {
+            "status": "not_configured",
+            "configured": False,
+            "authenticated": False,
+            "next_action": "Set BILIBILI_COOKIE for this process, then retry.",
+        }
+    try:
+        payload = get_json(api_url("/x/web-interface/nav"), retries=1)
+    except PipelineError:
+        return {
+            "status": "unreachable",
+            "configured": True,
+            "authenticated": False,
+            "next_action": (
+                "Check network access, then retry without printing the cookie."
+            ),
+        }
+    authenticated = bool((payload.get("data") or {}).get("isLogin"))
+    return {
+        "status": "ready" if authenticated else "invalid",
+        "configured": True,
+        "authenticated": authenticated,
+        "next_action": (
+            None
+            if authenticated
+            else "Refresh BILIBILI_COOKIE from a logged-in browser session."
+        ),
+    }
+
+
+def colab_auth_status() -> dict[str, Any]:
+    executable = shutil.which("colab")
+    if not executable:
+        return {
+            "status": "not_installed",
+            "configured": False,
+            "authenticated": False,
+            "next_action": "Install google-colab-cli, then complete OAuth2 setup.",
+        }
+    token_path = Path.home() / ".config" / "colab-cli" / "token.json"
+    if not token_path.exists():
+        return {
+            "status": "not_configured",
+            "configured": False,
+            "authenticated": False,
+            "next_action": "Run `colab --auth=oauth2 whoami` interactively once.",
+        }
+    colab_env = os.environ.copy()
+    colab_env.pop("BILIBILI_COOKIE", None)
+    try:
+        result = subprocess.run(
+            [executable, "--auth=oauth2", "whoami"],
+            check=False,
+            text=True,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=30,
+            env=colab_env,
+        )
+    except subprocess.TimeoutExpired:
+        return {
+            "status": "unreachable",
+            "configured": True,
+            "authenticated": False,
+            "next_action": "Check network access and retry Colab OAuth validation.",
+        }
+    authenticated = result.returncode == 0
+    combined = "\n".join((result.stdout or "", result.stderr or "")).lower()
+    old_cli = "no such command" in combined or "unknown command" in combined
+    status = (
+        "ready" if authenticated else ("update_required" if old_cli else "invalid")
+    )
+    return {
+        "status": status,
+        "configured": True,
+        "authenticated": authenticated,
+        "next_action": (
+            None
+            if authenticated
+            else (
+                "Update google-colab-cli before retrying."
+                if old_cli
+                else "Refresh the cached OAuth2 consent, then retry."
+            )
+        ),
+    }
+
+
+def command_auth_check(args: argparse.Namespace) -> int:
+    checks: dict[str, Any] = {}
+    if args.service in ("all", "bilibili"):
+        checks["bilibili"] = bilibili_auth_status()
+    if args.service in ("all", "colab"):
+        checks["colab"] = colab_auth_status()
+    ready = all(item["status"] == "ready" for item in checks.values())
+    print(
+        json.dumps(
+            {"service": args.service, "ready": ready, "checks": checks},
+            ensure_ascii=False,
+            indent=2,
+        )
+    )
+    return 0 if ready else 2
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Prepare Bilibili videos for evidence-checked Obsidian notes."
@@ -1749,6 +1857,16 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     subparsers.add_parser("doctor", help="Inspect reusable VM tools and cached engines.")
+
+    auth_check = subparsers.add_parser(
+        "auth-check",
+        help="Validate optional Bilibili and Colab credentials without exposing them.",
+    )
+    auth_check.add_argument(
+        "--service",
+        choices=("all", "bilibili", "colab"),
+        default="all",
+    )
 
     probe = subparsers.add_parser("probe", help="Fetch metadata and official subtitles.")
     probe.add_argument("url")
@@ -1836,6 +1954,8 @@ def main() -> int:
     try:
         if args.command == "doctor":
             command_doctor(args)
+        elif args.command == "auth-check":
+            return command_auth_check(args)
         elif args.command == "probe":
             command_probe(args)
         elif args.command == "prepare":

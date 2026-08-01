@@ -30,6 +30,26 @@ python3 "$SKILL_DIR/scripts/bili_video.py" doctor
 The core requires `ffmpeg`, `ffprobe`, and Pillow. Optional OCR and ASR engines
 are installed in a reusable cache only when their path is selected.
 
+## One-time setup and preflight
+
+Keep account setup separate from video processing. Read
+[references/setup.md](references/setup.md) when `doctor` reports a missing tool,
+when the user wants login-visible Bilibili subtitles, or before selecting Colab.
+
+Run only the credential check needed by the chosen path:
+
+```bash
+python3 "$SKILL_DIR/scripts/bili_video.py" auth-check --service bilibili
+python3 "$SKILL_DIR/scripts/bili_video.py" auth-check --service colab
+```
+
+These checks emit redacted JSON and never print cookies, tokens, or account
+identities. Bilibili login is optional: if it is not configured, tell the user
+that official/AI subtitles may be hidden and let them choose whether to configure
+it or continue anonymously. Colab authentication is required only when Colab is
+selected. Account login and OAuth consent are human setup steps; do not search
+for credentials or perform them silently.
+
 If the user has supplied a Bilibili login cookie, expose it only for this
 process as `BILIBILI_COOKIE`. This can reveal login-only AI subtitle tracks.
 Never print, persist, or place the cookie in the note. The manifest records only
@@ -133,6 +153,10 @@ The command reuses a named active session, installs Faster Whisper remotely,
 uploads only the audio and a non-secret job manifest, downloads timestamped
 JSON, and stops a session it created. Add `--keep-colab-session` only when more
 videos will be processed immediately.
+
+Before this upload, explicitly tell the user that audio will be sent to Google
+Colab and obtain approval. Colab OAuth setup does not by itself grant upload
+approval to the agent.
 
 Use local CPU/CUDA only when Colab is unavailable or the user asks to keep audio
 local:

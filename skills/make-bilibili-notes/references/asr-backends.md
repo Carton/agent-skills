@@ -16,17 +16,22 @@ availability depends on the user's Colab plan, quota, and current capacity.
 
 ## One-time Colab setup
 
+Read [setup.md](setup.md) first. Authentication and external audio upload are
+separate approvals: validate OAuth before the task, then obtain explicit user
+approval before uploading that task's audio.
+
 Install the official Linux CLI in WSL:
 
 ```bash
 uv tool install google-colab-cli
-colab --auth=oauth2 new -s bili-asr-setup --gpu T4
-colab --auth=oauth2 status -s bili-asr-setup
-colab --auth=oauth2 stop -s bili-asr-setup
+colab update --install
+colab --auth=oauth2 whoami
+python3 "$SKILL_DIR/scripts/bili_video.py" auth-check --service colab
 ```
 
-The first OAuth2 command may open a browser. Never copy authentication tokens,
-session metadata, or Bilibili cookies into a work directory or note.
+The OAuth2 command prints an authorization URL and asks the user to paste the
+returned code. Never copy authentication tokens, session metadata, or Bilibili
+cookies into a work directory or note.
 
 If `colab install` or `colab exec` raises `jupyter_kernel_client` missing
 `KernelClient`, the PyPI tool resolved the wrong same-named dependency. Replace
