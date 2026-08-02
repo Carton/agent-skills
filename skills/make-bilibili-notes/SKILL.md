@@ -1,6 +1,6 @@
 ---
 name: make-bilibili-notes
-description: Turn a Bilibili video or BV URL into a timestamped, evidence-checked Obsidian Markdown note, with official/AI subtitle retrieval, hard-subtitle OCR, and local or Google Colab GPU speech transcription. Use when a user asks to summarize, transcribe, take notes from, fact-check, or archive a Bilibili video. Always prefer official subtitles, then cropped hard-subtitle Chinese OCR with deduplication, then audio ASR; add a mandatory claim/evidence/risk-omission table for health, legal, or investment topics.
+description: Turn a Bilibili video or BV URL into a timestamped, evidence-checked Obsidian Markdown note, with official/AI subtitle retrieval, hard-subtitle OCR, and language-routed local or Google Colab speech transcription. Use when a user asks to summarize, transcribe, take notes from, fact-check, or archive a Bilibili video. Always prefer official subtitles, then cropped hard-subtitle Chinese OCR with deduplication, then audio ASR; route Chinese audio to Qwen3-ASR with FSMN-VAD and English audio to Faster Whisper; add a mandatory claim/evidence/risk-omission table for health, legal, or investment topics.
 ---
 
 # Make Bilibili Notes
@@ -159,19 +159,29 @@ fast local GPU, prefer the official Google Colab CLI backend:
 python3 "$SKILL_DIR/scripts/bili_video.py" transcribe "WORKDIR" \
   --backend colab --model large-v3 --colab-gpu T4 \
   --confirm-external-upload \
-  --language SOURCE_LANGUAGE --glossary "TERM1,TERM2"
+  --language auto --glossary "TERM1,TERM2"
 ```
 
-Confirm the source language by listening to the opening audio; slide text is only
-a clue (slides and narration may use different languages). Then pass
-`--language SOURCE_LANGUAGE` explicitly (`en` for English or `zh` for Chinese).
-Do not rely on the CLI default: a wrong language constraint can cause
-hallucinations and spelling errors. Build the glossary after this check.
+`--language auto` first uses Faster Whisper `tiny` only for spoken-language
+detection. It routes detected Chinese to Qwen3-ASR-1.7B with FSMN-VAD chunks of
+at most 60 seconds, and routes English or another detected language to Faster
+Whisper `large-v3`. Detection below 0.65 confidence stops and asks for an explicit
+language instead of silently choosing the wrong model.
 
-The command reuses a named active session, installs Faster Whisper remotely,
-uploads only the audio and a non-secret job manifest, downloads timestamped
-JSON, and stops a session it created. Add `--keep-colab-session` only when more
-videos will be processed immediately.
+After automatic detection, inspect `manifest.json` and listen to the opening
+audio. Slide text is only a clue because slides and narration may use different
+languages. If the language is already known, pass `--language zh` or
+`--language en` to skip detection. For code-switched audio, choose the dominant
+spoken language and record the limitation in the method log. Build the glossary
+after this check; Qwen receives it as context and Faster Whisper as its initial
+prompt.
+
+The command reuses a named active session, installs only the packages required by
+an explicit language (or both sets for `auto`), uploads only the audio and a
+non-secret job manifest, downloads timestamped JSON, and stops a session it
+created. Qwen timestamps are the enclosing FSMN-VAD chunk boundaries, not word
+alignment. Add `--keep-colab-session` only when more videos will be processed
+immediately.
 
 Pass `--confirm-external-upload` only after the task preflight choice above. That
 choice is sufficient for the current video, so do not interrupt the workflow to
@@ -179,18 +189,28 @@ ask again immediately before upload. Colab OAuth setup does not itself count as
 this per-video confirmation.
 
 Use local CPU/CUDA only when Colab is unavailable or the user asks to keep audio
-local:
+local. English keeps the existing Faster Whisper path:
 
 ```bash
 python3 "$SKILL_DIR/scripts/bili_video.py" transcribe "WORKDIR" \
-  --backend local --model small --bootstrap-asr --language SOURCE_LANGUAGE \
+  --backend local --model small --bootstrap-asr --language en \
   --glossary "TERM1,TERM2"
 ```
 
-The script reuses a cached Faster Whisper environment and model, uses CPU `int8`,
-VAD, timestamps, and the video title plus glossary as an initial prompt. `small`
-is the default speed/quality choice for cloud VMs. Use `medium` only when the
-content is terminology-heavy or the first pass fails a sample QA check.
+Chinese Qwen transcription requires either Colab or a working local CUDA GPU:
+
+```bash
+python3 "$SKILL_DIR/scripts/bili_video.py" transcribe "WORKDIR" \
+  --backend local --device cuda --bootstrap-asr --language zh \
+  --glossary "TERM1,TERM2"
+```
+
+The English path reuses a cached Faster Whisper environment and model, uses CPU
+`int8`, VAD, timestamps, and the video title plus glossary as an initial prompt.
+`small` is the local speed/quality default; use `medium` only when the content is
+terminology-heavy or the first pass fails a sample QA check. Do not silently
+fall back to CPU Faster Whisper for Chinese when Qwen cannot run; report the
+missing CUDA/Colab capability.
 
 Build the glossary from the title, description, slide text, speaker names, and
 domain terms before transcription. This materially reduces Chinese homophone
@@ -252,14 +272,14 @@ or the video's own citation is not independent validation.
   refreshes playback information.
 - Stylized Chinese hard subtitles: adjust the crop, then use generated contact
   sheets if OCR remains poor.
-- Chinese ASR homophones: add a glossary and rerun; upgrade from `small` to
-  `medium` only after a failed sample check.
+- Chinese ASR names or homophones: add a glossary and rerun Qwen so the title and
+  terms are supplied as context; verify the term-review report afterward.
 - Missing Chinese Tesseract data: `--bootstrap-ocr` downloads only the Chinese
   fast model into the skill cache; it does not overwrite system packages.
 - Highly stylized subtitles: use `--ocr rapidocr --bootstrap-ocr`, then fall
   back to bounded contact sheets if recognition remains poor.
-- Missing Faster Whisper or proxy SOCKS support: `--bootstrap-asr` installs both
-  into the skill cache.
+- Missing Faster Whisper/Qwen dependencies or proxy SOCKS support:
+  `--bootstrap-asr` installs the language-specific set into the skill cache.
 - Colab is unauthenticated or unavailable: run `colab --auth=oauth2 whoami`, then
   `auth-check --service colab`; read [references/setup.md](references/setup.md)
   when consent must be refreshed. Do not silently fall back to a multi-hour local

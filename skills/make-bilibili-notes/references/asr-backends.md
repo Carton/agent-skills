@@ -6,10 +6,11 @@ Read this reference only after official and hard subtitles have been ruled out.
 
 | Situation | Backend | Suggested model |
 |---|---|---|
-| WSL or laptop without a fast NVIDIA GPU | Google Colab CLI | `large-v3` |
-| Local NVIDIA GPU with working CUDA | Local | `large-v3` |
-| CPU-only and short/non-technical audio | Local | `small` |
-| Audio must not leave the machine | Local | `small` or `medium` |
+| Chinese, WSL/laptop without a fast NVIDIA GPU | Google Colab CLI | Qwen3-ASR-1.7B + FSMN-VAD |
+| English, WSL/laptop without a fast NVIDIA GPU | Google Colab CLI | Faster Whisper `large-v3` |
+| Chinese, local NVIDIA GPU with working CUDA | Local | Qwen3-ASR-1.7B + FSMN-VAD |
+| English, CPU-only and short/non-technical audio | Local | Faster Whisper `small` |
+| Audio must not leave the machine | Local | Chinese requires CUDA; English uses `small` or `medium` |
 
 Colab is an ephemeral batch executor, not a permanent API service. GPU
 availability depends on the user's Colab plan, quota, and current capacity.
@@ -51,7 +52,7 @@ command exits before creating or reusing a session:
 ```bash
 python3 "$SKILL_DIR/scripts/bili_video.py" transcribe "WORKDIR" \
   --backend colab --confirm-external-upload \
-  --model large-v3 --language SOURCE_LANGUAGE
+  --model large-v3 --language auto
 ```
 
 The confirmed `transcribe --backend colab` command uses this lifecycle:
@@ -59,8 +60,10 @@ The confirmed `transcribe --backend colab` command uses this lifecycle:
 1. Reuse `--colab-session` when it already exists.
 2. Otherwise create the requested GPU session.
 3. Upload the normalized WAV and a non-secret JSON job manifest.
-4. Install the pinned Faster Whisper package in the remote runtime.
-5. Execute the bundled worker and download its timestamped JSON.
+4. Install the pinned package set needed by the requested language. `auto`
+   installs the lightweight detector plus both possible ASR engines.
+5. Detect spoken language when requested, execute the selected engine, and
+   download timestamped JSON.
 6. Remove remote job files.
 7. Stop only the session created by this invocation, unless
    `--keep-colab-session` was passed.
@@ -74,34 +77,50 @@ colab --auth=oauth2 stop -s bili-asr
 
 ## Quality controls
 
+- Use `--language auto` when the spoken language is genuinely unknown. It runs a
+  Faster Whisper `tiny` probe and stops below 0.65 confidence.
+- Use `--language zh` or `--language en` when listening or reliable metadata has
+  already established the narration language; this avoids a detector download
+  and makes routing deterministic.
 - Build a glossary before ASR; include people, products, acronyms, and domain
   terms from verified metadata or visible slides.
-- Start with `large-v3` on remote GPU for terminology-heavy Chinese content.
+- Chinese uses Qwen3-ASR-1.7B with `funasr/fsmn-vad`; VAD regions are packed into
+  at most 60-second chunks and processed in batches of two on T4.
+- English and other non-Chinese languages use Faster Whisper. Start with
+  `large-v3` on remote GPU and `small` for a local CPU speed pass.
 - Cross-check the opening, a middle section, and the ending against audio/video.
 - Review proper nouns, numbers, units, negations, and conclusion wording.
-- Record backend, model, GPU request, and unresolved errors in the method log.
+- Record requested/detected language, confidence, engine, model, GPU request,
+  VAD chunking, and unresolved errors in the method log.
 
 If remote execution fails, report the Colab failure. Do not automatically start
 a potentially multi-hour CPU transcription without the user's knowledge.
 
-## Why Faster Whisper is the current baseline
+## Why the defaults differ by language
 
-Faster Whisper is used here for engineering maturity rather than a claim that it
-has the best Chinese character error rate. It provides one lightweight local and
-Colab implementation, stable segment timestamps, VAD, glossary prompting, and a
-well-understood T4 memory profile. Use `large-v3` for Chinese Colab work; `small`
-is a speed probe and can corrupt idioms or domain terms.
+The 2026-08-02 Colab T4 test used the same 1205.04-second FLEURS Mandarin WAV
+for all Chinese candidates. Qwen3-ASR-1.7B + FSMN-VAD reached 8.16% CER and a
+93.1-second warm new-audio estimate. Fun-ASR-Nano reached 8.05% CER but needed
+147.2 seconds; the four-character first-pass advantage was too small to justify
+the slower, less repeatable single-file path. Paraformer reached 10.15% CER in
+13.0 seconds, so it remains a future speed mode rather than the note-quality
+default.
 
-Chinese-focused alternatives are worth benchmarking on representative clips:
+Faster Whisper remains the English and general multilingual path because of its
+mature timestamps, VAD, initial-prompt support, and well-understood local/Colab
+behavior. The prior 10-minute Mandarin test gave Faster Whisper `large-v3`
+14.09% CER, so it is no longer the Chinese default.
 
-- FunASR `paraformer-zh` provides Chinese/English recognition, timestamps, and
-  hotwords with a much smaller model, but its PyTorch/ModelScope dependency set
-  can restart a live Colab CLI kernel during installation.
-- Qwen3-ASR supports Chinese dialects and strong long-audio recognition. Its ASR
-  model does not by itself provide the timestamped segments required by this
-  skill; the official timestamp path also loads Qwen3-ForcedAligner.
+Current Chinese behavior:
 
-Do not add or select either backend solely from published benchmark tables.
-First verify install stability, timestamp normalization, cleanup, and transcript
-quality on the same audio sample. Until then, label it as an unvalidated
-alternative rather than silently changing the source pipeline.
+- Download Qwen and FSMN-VAD from Hugging Face; do not use the slower ModelScope
+  path by default.
+- Store one transcript segment per VAD chunk. These start/end values support
+  approximate note links but are not word-level alignment.
+- Preserve Qwen's context input using the verified video title and glossary.
+- If a precise timeline is later required, add Qwen3-ForcedAligner as a separate
+  optional pass rather than charging every note for it.
+
+Do not infer that these Mandarin results cover Bilibili music, overlapping
+speakers, code-switching, or dialects. Continue the opening/middle/ending QA and
+label detection or transcription uncertainty explicitly.

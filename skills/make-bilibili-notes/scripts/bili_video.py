@@ -40,9 +40,27 @@ USER_AGENT = (
     "(KHTML, like Gecko) Chrome/126.0 Safari/537.36"
 )
 REFERER = "https://www.bilibili.com/"
-ASR_PACKAGES = ["faster-whisper==1.2.1", "socksio"]
+FASTER_WHISPER_PACKAGES = ["faster-whisper==1.2.1", "socksio"]
+QWEN_ASR_PACKAGES = [
+    "qwen-asr==0.0.6",
+    "funasr==1.4.0",
+    "soundfile==0.14.0",
+    "transformers==4.57.6",
+    "socksio",
+]
 OCR_PACKAGES = ["rapidocr-onnxruntime==1.4.4"]
-COLAB_ASR_PACKAGES = ["faster-whisper==1.2.1"]
+COLAB_FASTER_WHISPER_PACKAGES = ["faster-whisper==1.2.1"]
+ASR_LANGUAGE_DETECTION_MODEL = "tiny"
+CHINESE_ASR_LANGUAGE_CODES = {
+    "zh",
+    "yue",
+    "wuu",
+    "nan",
+    "hak",
+    "gan",
+    "hsn",
+    "cjy",
+}
 COLAB_REMOTE_AUDIO = "/content/make-bilibili-notes-audio.wav"
 COLAB_REMOTE_INPUT = "/content/make-bilibili-notes-input.json"
 COLAB_REMOTE_OUTPUT = "/content/make-bilibili-notes-output.json"
@@ -1431,45 +1449,53 @@ def command_hardsub(args: argparse.Namespace) -> None:
     write_json(manifest_path, manifest)
 
 
-def faster_whisper_worker(payload: dict[str, Any]) -> None:
-    from faster_whisper import WhisperModel
+def normalized_asr_language(value: str) -> str:
+    language = value.strip().lower().replace("_", "-")
+    aliases = {
+        "chinese": "zh",
+        "中文": "zh",
+        "mandarin": "zh",
+        "cmn": "zh",
+        "cantonese": "yue",
+        "english": "en",
+        "英语": "en",
+    }
+    return aliases.get(language, language)
 
-    model = WhisperModel(
-        payload["model"],
-        device=payload["device"],
-        compute_type=payload["compute_type"],
-        download_root=payload["model_cache"],
+
+def is_chinese_asr_language(value: str) -> bool:
+    language = normalized_asr_language(value)
+    return language in CHINESE_ASR_LANGUAGE_CODES or language.startswith("zh-")
+
+
+def asr_engine_for_language(value: str) -> str:
+    language = normalized_asr_language(value)
+    if language == "auto":
+        return "auto"
+    if is_chinese_asr_language(language):
+        return "qwen3-asr"
+    return "faster-whisper"
+
+
+def asr_packages_for_language(value: str, *, colab: bool) -> list[str]:
+    engine = asr_engine_for_language(value)
+    faster_packages = (
+        COLAB_FASTER_WHISPER_PACKAGES if colab else FASTER_WHISPER_PACKAGES
     )
-    segments, info = model.transcribe(
-        payload["audio"],
-        language=payload["language"],
-        beam_size=payload["beam_size"],
-        vad_filter=True,
-        vad_parameters={"min_silence_duration_ms": 500},
-        initial_prompt=payload.get("initial_prompt") or None,
-        condition_on_previous_text=True,
-    )
-    output: list[dict[str, Any]] = []
-    for segment in segments:
-        text_value = normalize_text(segment.text)
-        if text_value:
-            output.append(
-                {
-                    "start": float(segment.start),
-                    "end": float(segment.end),
-                    "text": text_value,
-                    "confidence": None,
-                    "source": "audio_asr",
-                }
-            )
-    write_json(
-        Path(payload["output"]),
-        {
-            "language": getattr(info, "language", payload["language"]),
-            "language_probability": getattr(info, "language_probability", None),
-            "segments": output,
-        },
-    )
+    if engine == "qwen3-asr":
+        return list(QWEN_ASR_PACKAGES)
+    if engine == "faster-whisper":
+        return list(faster_packages)
+    return [*faster_packages, *QWEN_ASR_PACKAGES]
+
+
+def asr_modules_for_language(value: str) -> list[str]:
+    engine = asr_engine_for_language(value)
+    if engine == "qwen3-asr":
+        return ["qwen_asr", "funasr", "soundfile", "torch"]
+    if engine == "faster-whisper":
+        return ["faster_whisper"]
+    return ["faster_whisper", "qwen_asr", "funasr", "soundfile", "torch"]
 
 
 def colab_command(auth: str, *parts: str) -> list[str]:
@@ -1488,7 +1514,7 @@ def run_colab_transcription(
     payload: dict[str, Any],
     raw_output: Path,
 ) -> dict[str, Any]:
-    worker = Path(__file__).with_name("colab_faster_whisper.py")
+    worker = Path(__file__).with_name("asr_worker.py")
     if not worker.exists():
         raise PipelineError(f"缺少 Colab 转录脚本：{worker}")
     colab_env = os.environ.copy()
@@ -1561,13 +1587,21 @@ def run_colab_transcription(
                 "install",
                 "-s",
                 session,
-                *COLAB_ASR_PACKAGES,
+                *asr_packages_for_language(args.language, colab=True),
             ),
             env=colab_env,
         )
-        say(
-            f"使用 Colab {args.colab_gpu} 上的 Faster Whisper {args.model} 转写…"
-        )
+        requested_engine = asr_engine_for_language(args.language)
+        if requested_engine == "auto":
+            engine_message = (
+                f"先用 Faster Whisper {ASR_LANGUAGE_DETECTION_MODEL} 检测语言，"
+                f"中文转 Qwen3-ASR-1.7B，其他语言转 Faster Whisper {args.model}"
+            )
+        elif requested_engine == "qwen3-asr":
+            engine_message = "使用 Qwen3-ASR-1.7B + FSMN-VAD ≤60 秒分块"
+        else:
+            engine_message = f"使用 Faster Whisper {args.model}"
+        say(f"Colab {args.colab_gpu}：{engine_message}…")
         run(
             colab_command(
                 args.colab_auth,
@@ -1640,6 +1674,15 @@ def command_transcribe(args: argparse.Namespace) -> None:
     audio = Path(args.audio).resolve() if args.audio else workdir / "audio.wav"
     if not audio.exists():
         raise PipelineError(f"找不到音频：{audio}")
+    if (
+        args.backend == "local"
+        and asr_engine_for_language(args.language) == "qwen3-asr"
+        and args.device != "cuda"
+    ):
+        raise PipelineError(
+            "中文默认 Qwen3-ASR-1.7B 需要 CUDA。请改用 --backend colab，"
+            "或在本地 NVIDIA GPU 上传入 --device cuda。"
+        )
     if audio.suffix.lower() != ".wav":
         converted = workdir / "audio.wav"
         convert_audio(audio, converted)
@@ -1661,6 +1704,7 @@ def command_transcribe(args: argparse.Namespace) -> None:
         "device": args.device,
         "compute_type": args.compute_type,
         "language": args.language,
+        "language_detection_model": ASR_LANGUAGE_DETECTION_MODEL,
         "beam_size": args.beam_size,
         "initial_prompt": initial_prompt,
         "model_cache": str(model_cache),
@@ -1669,16 +1713,29 @@ def command_transcribe(args: argparse.Namespace) -> None:
     if args.backend == "colab":
         backend_details = run_colab_transcription(args, audio, payload, raw_output)
     else:
+        worker = Path(__file__).with_name("asr_worker.py")
+        if not worker.exists():
+            raise PipelineError(f"缺少 ASR worker：{worker}")
         python = Path(sys.executable)
-        if not module_available("faster_whisper"):
-            python = venv_python("asr")
-            if not module_available("faster_whisper", python):
+        modules = asr_modules_for_language(args.language)
+        if not all(module_available(module) for module in modules):
+            engine = asr_engine_for_language(args.language)
+            environment_name = {
+                "auto": "asr-auto",
+                "qwen3-asr": "asr-qwen",
+                "faster-whisper": "asr",
+            }[engine]
+            python = venv_python(environment_name)
+            if not all(module_available(module, python) for module in modules):
                 if not args.bootstrap_asr:
                     raise PipelineError(
-                        "未找到 Faster Whisper。重新运行并添加 --bootstrap-asr，"
+                        "未找到所需 ASR 依赖。重新运行并添加 --bootstrap-asr，"
                         "脚本会创建可复用的隔离环境。"
                     )
-                python = bootstrap_venv("asr", ASR_PACKAGES)
+                python = bootstrap_venv(
+                    environment_name,
+                    asr_packages_for_language(args.language, colab=False),
+                )
         model_cache.mkdir(parents=True, exist_ok=True)
         worker_env = os.environ.copy()
         worker_env.update(
@@ -1691,25 +1748,20 @@ def command_transcribe(args: argparse.Namespace) -> None:
                 "HF_HUB_DISABLE_XET": "1",
             }
         )
-        say(f"使用本地 Faster Whisper {args.model} 转写；首次运行会下载并缓存模型…")
-        if Path(sys.executable).resolve() == python.resolve() and module_available(
-            "faster_whisper"
-        ):
-            os.environ.update(worker_env)
-            faster_whisper_worker(payload)
-        else:
-            payload_path = workdir / "asr-worker-input.json"
-            write_json(payload_path, payload)
+        say("使用本地 ASR 路由转写；首次运行会下载并缓存所需模型…")
+        payload_path = workdir / "asr-worker-input.json"
+        write_json(payload_path, payload)
+        try:
             run(
                 [
                     str(python),
-                    str(Path(__file__).resolve()),
-                    "_faster_whisper_worker",
+                    str(worker),
                     "--payload",
                     str(payload_path),
                 ],
                 env=worker_env,
             )
+        finally:
             payload_path.unlink(missing_ok=True)
     raw = read_json(raw_output)
     write_transcript(workdir, raw["segments"], "audio_asr")
@@ -1735,11 +1787,16 @@ def command_transcribe(args: argparse.Namespace) -> None:
     manifest["source_type"] = "audio_asr"
     manifest["next_action"] = "review_transcript_then_write_note"
     manifest["asr"] = {
-        "engine": "faster-whisper",
+        "engine": raw.get("engine"),
         "backend": args.backend,
-        "model": args.model,
+        "model": raw.get("model"),
+        "requested_language": normalized_asr_language(args.language),
         "language": raw.get("language"),
         "language_probability": raw.get("language_probability"),
+        "language_detection": raw.get("language_detection"),
+        "vad_model": raw.get("vad_model"),
+        "max_segment_seconds": raw.get("max_segment_seconds"),
+        "vad_segment_count": raw.get("vad_segment_count"),
         "initial_prompt": initial_prompt,
         "external_upload_confirmed": args.backend == "colab",
         **backend_details,
@@ -1812,6 +1869,8 @@ def command_doctor(_: argparse.Namespace) -> None:
         "rapidocr_cached": module_available("rapidocr_onnxruntime", venv_python("ocr")),
         "faster_whisper_current": module_available("faster_whisper"),
         "faster_whisper_cached": module_available("faster_whisper", venv_python("asr")),
+        "qwen_asr_current": module_available("qwen_asr"),
+        "qwen_asr_cached": module_available("qwen_asr", venv_python("asr-qwen")),
         "bilibili_cookie_configured": bool(cookie),
         "bilibili_cookie_source": cookie_source,
         "bilibili_cookie_error": cookie_error,
@@ -2097,7 +2156,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     transcribe = subparsers.add_parser(
         "transcribe",
-        help="Transcribe audio with local or Google Colab Faster Whisper.",
+        help=(
+            "Transcribe with language routing: Qwen3-ASR for Chinese and "
+            "Faster Whisper for English/other languages."
+        ),
     )
     transcribe.add_argument("workdir")
     transcribe.add_argument("--audio")
@@ -2109,7 +2171,11 @@ def build_parser() -> argparse.ArgumentParser:
     transcribe.add_argument("--model", default="small")
     transcribe.add_argument("--device", choices=("cpu", "cuda"), default="cpu")
     transcribe.add_argument("--compute-type", default="int8")
-    transcribe.add_argument("--language", default="zh")
+    transcribe.add_argument(
+        "--language",
+        default="auto",
+        help="auto detects the spoken language; pass zh or en to skip detection.",
+    )
     transcribe.add_argument("--beam-size", type=int, default=3)
     transcribe.add_argument("--glossary", default="")
     transcribe.add_argument("--bootstrap-asr", action="store_true")
@@ -2139,8 +2205,6 @@ def build_parser() -> argparse.ArgumentParser:
 
     worker_ocr = subparsers.add_parser("_rapidocr_worker")
     worker_ocr.add_argument("--payload", required=True)
-    worker_asr = subparsers.add_parser("_faster_whisper_worker")
-    worker_asr.add_argument("--payload", required=True)
     return parser
 
 
@@ -2168,8 +2232,6 @@ def main() -> int:
             command_finalize(args)
         elif args.command == "_rapidocr_worker":
             rapidocr_worker(read_json(Path(args.payload)))
-        elif args.command == "_faster_whisper_worker":
-            faster_whisper_worker(read_json(Path(args.payload)))
         else:
             parser.error("unknown command")
         return 0

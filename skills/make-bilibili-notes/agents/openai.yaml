@@ -1,4 +1,4 @@
 interface:
   display_name: "Bilibili Video Notes"
-  short_description: "提取 B 站字幕或用 Colab GPU 转录，生成可核查笔记"
+  short_description: "提取 B 站字幕，或按中英文选择 Colab ASR，生成可核查笔记"
   default_prompt: "Use $make-bilibili-notes to turn this Bilibili video into a timestamped, evidence-checked Obsidian note."
