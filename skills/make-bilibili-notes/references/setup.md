@@ -8,6 +8,9 @@ configuration separate from a video work directory.
 
 - `doctor` inspects local tools and caches. It does not validate accounts.
 - `auth-check` validates only the selected account path and emits redacted JSON.
+- `auth-save --service bilibili` is the supported persistent-cookie path for a
+  trusted personal machine. It writes outside the repository with private
+  permissions.
 - Account login, OAuth consent, and external audio upload require the user's
   explicit participation.
 - Never paste a cookie or token into `SKILL.md`, a note, a work directory, a
@@ -36,31 +39,46 @@ long CPU job.
 ## Optional Bilibili login
 
 Anonymous access remains supported, but Bilibili may hide official or AI
-subtitle tracks unless the request carries a logged-in browser cookie. The skill
-does not persist this cookie by design.
+subtitle tracks unless the request carries a logged-in browser cookie. On a
+trusted personal machine, the skill can persist that cookie locally so later
+runs do not require another copy-and-paste until the cookie expires.
 
 1. Sign in to Bilibili in a browser and obtain the `Cookie` request-header value
    from that authenticated session. Browser UI details vary; do not install an
    untrusted cookie-export extension.
-2. Prefer a password manager or credential helper. For a temporary interactive
-   shell session, read the value without echoing it, export it, and clear it when
-   finished:
+2. Save it interactively. The prompt does not echo the pasted value:
 
    ```bash
-   read -r -s BILIBILI_COOKIE
-   export BILIBILI_COOKIE
+   python3 "$SKILL_DIR/scripts/bili_video.py" auth-save --service bilibili
+   unset BILIBILI_COOKIE
    python3 "$SKILL_DIR/scripts/bili_video.py" auth-check --service bilibili
-   # Run prepare in the same shell, then:
+   ```
+
+   If `BILIBILI_COOKIE` is already exported in that shell, `auth-save` stores it
+   without prompting. Otherwise paste it only at the hidden prompt.
+
+3. The file is stored at
+   `~/.config/make-bilibili-notes/bilibili-cookie`. The script sets its parent
+   directory to mode `700` and the file to mode `600`, rejects symlinks or
+   broader permissions, and prefers a temporary `BILIBILI_COOKIE` environment
+   override when one is present.
+
+4. A `ready` result means the cookie currently represents a logged-in session.
+   `invalid` means it should be refreshed by running `auth-save` again.
+   `unreachable` means authentication could not be distinguished from a network
+   failure.
+
+5. Remove the saved credential when it is no longer wanted:
+
+   ```bash
+   python3 "$SKILL_DIR/scripts/bili_video.py" auth-clear --service bilibili
    unset BILIBILI_COOKIE
    ```
 
-3. A `ready` result means the cookie currently represents a logged-in session.
-   `invalid` means it should be refreshed. `unreachable` means authentication
-   could not be distinguished from a network failure.
-
-Cookies can grant account access. Do not place one in shell startup files or a
-project `.env`. Revoke browser sessions from Bilibili account security settings
-if the value may have leaked.
+Cookies can grant account access. Use this file mode only on a trusted personal
+machine; it is plaintext protected by filesystem permissions. Do not copy it to
+cloud-synced folders, shell startup files, or a project `.env`. Revoke browser
+sessions from Bilibili account security settings if the value may have leaked.
 
 ## Google Colab OAuth2
 

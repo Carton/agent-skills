@@ -43,6 +43,12 @@ python3 "$SKILL_DIR/scripts/bili_video.py" auth-check --service bilibili
 python3 "$SKILL_DIR/scripts/bili_video.py" auth-check --service colab
 ```
 
+On a trusted personal machine, persist a Bilibili browser cookie once with
+`auth-save --service bilibili`. The script stores it outside the repository at
+`~/.config/make-bilibili-notes/bilibili-cookie` with private permissions and
+automatically reuses it. Read [references/setup.md](references/setup.md) for the
+interactive login, refresh, and removal commands.
+
 At task preflight, ask once whether Colab may be used if audio ASR becomes
 necessary. Explain that this uploads the normalized WAV, a non-secret job
 manifest, and the bundled transcription worker to the user's Google Colab
@@ -61,15 +67,16 @@ the anonymous path remains usable. Colab authentication is required only when
 Colab is selected. Account login and OAuth consent are human setup steps; do not
 search for credentials or perform them silently.
 
-If the user has supplied a Bilibili login cookie, expose it only for this
-process as `BILIBILI_COOKIE`. This can reveal login-only AI subtitle tracks.
-Never print, persist, or place the cookie in the note. The manifest records only
-whether a cookie was configured.
+Resolve a Bilibili login cookie from `BILIBILI_COOKIE` first and the private
+local file second. The environment variable is the temporary override. Never
+print the cookie or place it in a note, work directory, repository file, command
+argument, or agent message. The manifest records only whether a cookie was
+configured.
 
 An empty anonymous subtitle response does not prove that a video has no official
-or AI subtitle track. Before choosing OCR or ASR, retry with `BILIBILI_COOKIE`
-when the user has chosen to provide one; otherwise record the authentication
-limitation in the note.
+or AI subtitle track. Before choosing OCR or ASR, retry after `auth-check` reports
+the saved or temporary Bilibili cookie as ready; otherwise record the
+authentication limitation in the note.
 
 ## Workflow
 

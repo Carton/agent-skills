@@ -7,6 +7,7 @@ import io
 import json
 import os
 import subprocess
+import tempfile
 import unittest
 import urllib.error
 from pathlib import Path
@@ -21,6 +22,18 @@ SPEC.loader.exec_module(bili_video)
 
 
 class BilibiliAuthStatusTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temporary_directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary_directory.cleanup)
+        cookie_path = Path(self.temporary_directory.name) / "missing-cookie"
+        patcher = mock.patch.object(
+            bili_video,
+            "bilibili_cookie_path",
+            return_value=cookie_path,
+        )
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     def test_missing_cookie_allows_anonymous_continuation(self) -> None:
         with mock.patch.dict(os.environ, {"BILIBILI_COOKIE": ""}):
             status = bili_video.bilibili_auth_status()
@@ -90,6 +103,77 @@ class BilibiliAuthStatusTest(unittest.TestCase):
             status = bili_video.bilibili_auth_status()
 
         self.assertEqual(status["status"], "unreachable")
+
+
+class BilibiliCookieStorageTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temporary_directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary_directory.cleanup)
+        self.cookie_path = (
+            Path(self.temporary_directory.name)
+            / "make-bilibili-notes"
+            / "bilibili-cookie"
+        )
+        patcher = mock.patch.object(
+            bili_video,
+            "bilibili_cookie_path",
+            return_value=self.cookie_path,
+        )
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def test_save_and_load_cookie_with_private_permissions(self) -> None:
+        saved_path = bili_video.save_bilibili_cookie("secret-sentinel")
+
+        with mock.patch.dict(os.environ, {"BILIBILI_COOKIE": ""}):
+            cookie, source = bili_video.load_bilibili_cookie()
+
+        self.assertEqual(saved_path, self.cookie_path)
+        self.assertEqual(cookie, "secret-sentinel")
+        self.assertEqual(source, "file")
+        self.assertEqual(self.cookie_path.stat().st_mode & 0o777, 0o600)
+        self.assertEqual(self.cookie_path.parent.stat().st_mode & 0o777, 0o700)
+
+    def test_environment_cookie_has_priority_over_saved_file(self) -> None:
+        bili_video.save_bilibili_cookie("saved-secret")
+
+        with mock.patch.dict(
+            os.environ,
+            {"BILIBILI_COOKIE": "environment-secret"},
+        ):
+            cookie, source = bili_video.load_bilibili_cookie()
+
+        self.assertEqual(cookie, "environment-secret")
+        self.assertEqual(source, "environment")
+
+    def test_rejects_cookie_file_with_group_or_other_access(self) -> None:
+        bili_video.save_bilibili_cookie("secret-sentinel")
+        self.cookie_path.chmod(0o644)
+
+        with (
+            mock.patch.dict(os.environ, {"BILIBILI_COOKIE": ""}),
+            self.assertRaisesRegex(bili_video.PipelineError, "chmod 600"),
+        ):
+            bili_video.load_bilibili_cookie()
+
+    def test_auth_save_uses_environment_without_printing_cookie(self) -> None:
+        output = io.StringIO()
+        args = argparse.Namespace(service="bilibili")
+        with (
+            mock.patch.dict(
+                os.environ,
+                {"BILIBILI_COOKIE": "secret-sentinel"},
+            ),
+            contextlib.redirect_stdout(output),
+        ):
+            exit_code = bili_video.command_auth_save(args)
+
+        self.assertEqual(exit_code, 0)
+        self.assertNotIn("secret-sentinel", output.getvalue())
+        self.assertEqual(
+            self.cookie_path.read_text(encoding="utf-8"),
+            "secret-sentinel",
+        )
 
 
 class ColabAuthStatusTest(unittest.TestCase):

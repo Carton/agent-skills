@@ -16,6 +16,7 @@ import argparse
 import contextlib
 import datetime as dt
 import difflib
+import getpass
 import hashlib
 import importlib.util
 import json
@@ -53,6 +54,72 @@ TESSDATA_FAST_CHI_SIM = (
 
 class PipelineError(RuntimeError):
     pass
+
+
+def bilibili_cookie_path() -> Path:
+    return Path.home() / ".config" / "make-bilibili-notes" / "bilibili-cookie"
+
+
+def load_bilibili_cookie() -> tuple[str, str]:
+    cookie = os.environ.get("BILIBILI_COOKIE", "").strip()
+    if cookie:
+        return cookie, "environment"
+
+    path = bilibili_cookie_path()
+    if path.is_symlink():
+        raise PipelineError(f"Bilibili Cookie 路径不能是符号链接：{path}")
+    if not path.exists():
+        return "", "none"
+    if not path.is_file():
+        raise PipelineError(f"Bilibili Cookie 路径必须是普通文件：{path}")
+    if path.parent.is_symlink():
+        raise PipelineError(f"Bilibili Cookie 目录不能是符号链接：{path.parent}")
+    if (path.parent.stat().st_mode & 0o777) != 0o700:
+        raise PipelineError(
+            f"Bilibili Cookie 目录权限过宽；请运行：chmod 700 {path.parent}"
+        )
+    if (path.stat().st_mode & 0o777) != 0o600:
+        raise PipelineError(
+            f"Bilibili Cookie 文件权限过宽；请运行：chmod 600 {path}"
+        )
+    cookie = path.read_text(encoding="utf-8").strip()
+    if not cookie:
+        raise PipelineError(f"Bilibili Cookie 文件为空：{path}")
+    return cookie, "file"
+
+
+def save_bilibili_cookie(cookie: str) -> Path:
+    cookie = cookie.strip()
+    if not cookie or "\n" in cookie or "\r" in cookie:
+        raise PipelineError("Bilibili Cookie 不能为空或包含换行符。")
+
+    path = bilibili_cookie_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if path.parent.is_symlink():
+        raise PipelineError(f"Bilibili Cookie 目录不能是符号链接：{path.parent}")
+    path.parent.chmod(0o700)
+
+    temporary_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=path.parent,
+            prefix=".bilibili-cookie-",
+            delete=False,
+        ) as temporary:
+            temporary_path = Path(temporary.name)
+            temporary_path.chmod(0o600)
+            temporary.write(cookie)
+            temporary.flush()
+            os.fsync(temporary.fileno())
+        os.replace(temporary_path, path)
+        path.chmod(0o600)
+    except Exception:
+        if temporary_path is not None:
+            temporary_path.unlink(missing_ok=True)
+        raise
+    return path
 
 
 def say(message: str) -> None:
@@ -109,7 +176,7 @@ def request(
 ) -> urllib.response.addinfourl:
     merged = {"User-Agent": USER_AGENT, "Referer": REFERER}
     hostname = (urllib.parse.urlparse(url).hostname or "").lower()
-    cookie = os.environ.get("BILIBILI_COOKIE", "").strip()
+    cookie, _ = load_bilibili_cookie()
     if cookie and (hostname == "bilibili.com" or hostname.endswith(".bilibili.com")):
         merged["Cookie"] = cookie
     if headers:
@@ -752,7 +819,7 @@ def command_probe(args: argparse.Namespace) -> None:
     player = player_data(metadata)
     subtitle_items = ((player.get("subtitle") or {}).get("subtitles") or [])
     selected = choose_subtitle(subtitle_items)
-    cookie_configured = bool(os.environ.get("BILIBILI_COOKIE", "").strip())
+    cookie_configured = bool(load_bilibili_cookie()[0])
     manifest: dict[str, Any] = {
         "metadata": metadata,
         "official_subtitles": [
@@ -805,8 +872,8 @@ def command_probe(args: argparse.Namespace) -> None:
                 if selected or cookie_configured
                 else (
                     "Bilibili may hide AI or CC subtitle tracks without login. "
-                    "Retry with a user-supplied BILIBILI_COOKIE before concluding "
-                    "that no official subtitle exists."
+                    "Authenticate with a saved or temporary Bilibili cookie before "
+                    "concluding that no official subtitle exists."
                 )
             ),
         },
@@ -1730,6 +1797,13 @@ def command_doctor(_: argparse.Namespace) -> None:
             for line in result.stdout.splitlines()
             if line.strip() and not line.startswith("List of")
         ]
+    try:
+        cookie, cookie_source = load_bilibili_cookie()
+        cookie_error = None
+    except PipelineError as exc:
+        cookie = ""
+        cookie_source = "invalid_local_file"
+        cookie_error = str(exc)
     payload = {
         "python": sys.version.split()[0],
         "tools": tools,
@@ -1738,9 +1812,9 @@ def command_doctor(_: argparse.Namespace) -> None:
         "rapidocr_cached": module_available("rapidocr_onnxruntime", venv_python("ocr")),
         "faster_whisper_current": module_available("faster_whisper"),
         "faster_whisper_cached": module_available("faster_whisper", venv_python("asr")),
-        "bilibili_cookie_configured": bool(
-            os.environ.get("BILIBILI_COOKIE", "").strip()
-        ),
+        "bilibili_cookie_configured": bool(cookie),
+        "bilibili_cookie_source": cookie_source,
+        "bilibili_cookie_error": cookie_error,
         "colab_cli": tools["colab"],
         "tesseract_languages": tesseract_languages,
         "cache": str(cache_root()),
@@ -1750,12 +1824,25 @@ def command_doctor(_: argparse.Namespace) -> None:
 
 
 def bilibili_auth_status() -> dict[str, Any]:
-    if not os.environ.get("BILIBILI_COOKIE", "").strip():
+    try:
+        cookie, source = load_bilibili_cookie()
+    except PipelineError as exc:
+        return {
+            "status": "unsafe_configuration",
+            "configured": True,
+            "authenticated": False,
+            "source": "file",
+            "next_action": str(exc),
+        }
+    if not cookie:
         return {
             "status": "not_configured",
             "configured": False,
             "authenticated": False,
-            "next_action": "Set BILIBILI_COOKIE for this process, then retry.",
+            "source": "none",
+            "next_action": (
+                "Run `auth-save --service bilibili`, then retry."
+            ),
         }
     try:
         with request(api_url("/x/web-interface/nav"), timeout=15) as response:
@@ -1765,6 +1852,7 @@ def bilibili_auth_status() -> dict[str, Any]:
             "status": "unreachable",
             "configured": True,
             "authenticated": False,
+            "source": source,
             "next_action": (
                 "Check network access, then retry without printing the cookie."
             ),
@@ -1774,6 +1862,7 @@ def bilibili_auth_status() -> dict[str, Any]:
             "status": "unreachable",
             "configured": True,
             "authenticated": False,
+            "source": source,
             "next_action": "Retry after checking the Bilibili API response.",
         }
     code = payload.get("code")
@@ -1786,20 +1875,71 @@ def bilibili_auth_status() -> dict[str, Any]:
             "status": "api_error",
             "configured": True,
             "authenticated": False,
+            "source": source,
             "next_action": (
-                "Unset BILIBILI_COOKIE to continue anonymously, or retry later."
+                "Clear the saved cookie and any BILIBILI_COOKIE override to "
+                "continue anonymously, or retry later."
             ),
         }
     return {
         "status": "ready" if authenticated else "invalid",
         "configured": True,
         "authenticated": authenticated,
+        "source": source,
         "next_action": (
             None
             if authenticated
-            else "Refresh BILIBILI_COOKIE from a logged-in browser session."
+            else "Refresh the saved Bilibili Cookie with `auth-save`."
         ),
     }
+
+
+def command_auth_save(args: argparse.Namespace) -> int:
+    del args
+    cookie = os.environ.get("BILIBILI_COOKIE", "").strip()
+    if not cookie:
+        if not sys.stdin.isatty():
+            raise PipelineError(
+                "需要交互式终端输入 Cookie，或先设置 BILIBILI_COOKIE。"
+            )
+        cookie = getpass.getpass("粘贴 Bilibili Cookie（输入不会显示）：")
+    path = save_bilibili_cookie(cookie)
+    print(
+        json.dumps(
+            {
+                "service": "bilibili",
+                "saved": True,
+                "path": str(path),
+                "mode": "0600",
+                "next_action": (
+                    "Unset BILIBILI_COOKIE, then run "
+                    "`auth-check --service bilibili` to verify the saved file."
+                ),
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+    )
+    return 0
+
+
+def command_auth_clear(args: argparse.Namespace) -> int:
+    del args
+    path = bilibili_cookie_path()
+    removed = path.exists() or path.is_symlink()
+    path.unlink(missing_ok=True)
+    print(
+        json.dumps(
+            {
+                "service": "bilibili",
+                "removed": removed,
+                "path": str(path),
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+    )
+    return 0
 
 
 def colab_auth_status(auth: str) -> dict[str, Any]:
@@ -1911,6 +2051,18 @@ def build_parser() -> argparse.ArgumentParser:
         default="oauth2",
     )
 
+    auth_save = subparsers.add_parser(
+        "auth-save",
+        help="Save a Bilibili cookie in a private local file.",
+    )
+    auth_save.add_argument("--service", choices=("bilibili",), required=True)
+
+    auth_clear = subparsers.add_parser(
+        "auth-clear",
+        help="Remove the saved Bilibili cookie file.",
+    )
+    auth_clear.add_argument("--service", choices=("bilibili",), required=True)
+
     probe = subparsers.add_parser("probe", help="Fetch metadata and official subtitles.")
     probe.add_argument("url")
     probe.add_argument("--page", type=int, default=1)
@@ -2000,6 +2152,10 @@ def main() -> int:
             command_doctor(args)
         elif args.command == "auth-check":
             return command_auth_check(args)
+        elif args.command == "auth-save":
+            return command_auth_save(args)
+        elif args.command == "auth-clear":
+            return command_auth_clear(args)
         elif args.command == "probe":
             command_probe(args)
         elif args.command == "prepare":
