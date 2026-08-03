@@ -47,6 +47,13 @@ the H1, for example:
 
 说明该段论证、例子与结论。保持视频实际顺序。
 
+## 完整笔记
+
+### 00:00–03:20 小节标题
+
+把这一时段的全部实质内容整理成连贯、正式的书面文本。继续按时间顺序覆盖
+后续时段，直到视频结束。
+
 ## 视频原观点与外部核查
 
 明确区分：
@@ -63,20 +70,57 @@ the H1, for example:
 
 - [原视频](URL)
 - 外部来源只列实际读过且直接支持正文主张的页面。
-
-## 处理记录
-
-- 官方字幕：有/无。
-- 内容提取：官方字幕/硬字幕 OCR/视觉识别/音频 ASR。
-- OCR/ASR 引擎与模型。
-- 人工或模型复核的抽样位置。
-- 遇到的问题、采取的回退路径、仍然存在的不确定性。
 ```
+
+Do not add a `处理记录` section or equivalent implementation history to the
+note.
+
+## Complete-note fidelity
+
+`完整笔记` is a faithful full-content rewrite, not an expanded summary. Preserve
+the source order and every substantive claim, explanation, example, condition,
+contrast, transition, caveat, and conclusion. You may:
+
+- remove filler words, stutters, false starts, and exact repetitions;
+- repair punctuation, sentence boundaries, and obvious pronoun references;
+- organize consecutive speech into readable paragraphs and timestamped
+  subsections;
+- translate non-Chinese speech faithfully into Chinese, retaining important
+  source-language technical terms on first mention.
+
+Do not compress away reasoning steps, examples, qualifications, or repeated
+ideas that add meaning. Do not introduce facts from the summary, external
+research, or general knowledge. If extraction is incomplete, mark the missing
+range at the relevant location and disclose the coverage limit.
+
+## Separate processing log
+
+Keep processing history outside the note in one UTF-8 plain-text `processing.log`
+in the same output directory. Append one entry per video or part using this
+compact shape:
+
+```text
+[YYYY-MM-DD HH:MM] 视频标题或分 P
+output=正式笔记文件名
+url=原视频 URL
+source=官方字幕/硬字幕 OCR/视觉识别/音频 ASR
+engine=实际使用的引擎与模型
+qa=抽查位置与结论
+external_processing=例如 Colab 上传与远端清理；没有则写“无”
+fallbacks=认证限制、错挂字幕、失败路径及采取的回退
+unresolved=仍可能影响转写完整性或准确性的内容
+```
+
+Do not copy this log into the note. Reader-facing uncertainty about the video's
+claims belongs in `局限与待核实项`; extraction mechanics and tool history belong
+only in `processing.log`.
 
 ## Writing rules
 
 - 先完成转录 QA，再做摘要。
 - 重要结论带时间戳；不要伪造逐字准确度。
+- `完整笔记` 紧跟在 `时间线` 后，覆盖全部实质内容，只清理不承载语义的口语
+  噪声，不做摘要式删减。
 - 不把视频中的产品展示、个人经验或动画示意图写成证据。
 - 外部解释必须有标记，不能混入“视频原观点”。
 - PPT 型视频只保存能够补充文本的稳定帧，并在图片说明中写时间戳。

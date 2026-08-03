@@ -1,6 +1,6 @@
 ---
 name: make-bilibili-notes
-description: Turn a Bilibili video or BV URL into a timestamped, evidence-checked Obsidian Markdown note, with official/AI subtitle retrieval, hard-subtitle OCR, and language-routed local or Google Colab speech transcription. Use when a user asks to summarize, transcribe, take notes from, fact-check, or archive a Bilibili video. Always prefer official subtitles, then cropped hard-subtitle Chinese OCR with deduplication, then audio ASR; route Chinese audio to Qwen3-ASR with FSMN-VAD and English audio to Faster Whisper; add a mandatory claim/evidence/risk-omission table for health, legal, or investment topics.
+description: Turn a Bilibili video or BV URL into a timestamped, evidence-checked Obsidian Markdown note with a complete, polished prose rendering of the transcript, using official/AI subtitle retrieval, hard-subtitle OCR, and language-routed local or Google Colab speech transcription. Use when a user asks to summarize, transcribe, take notes from, fact-check, or archive a Bilibili video. Always prefer official subtitles, then cropped hard-subtitle Chinese OCR with deduplication, then audio ASR; route Chinese audio to Qwen3-ASR with FSMN-VAD and English audio to Faster Whisper; add a mandatory claim/evidence/risk-omission table for health, legal, or investment topics.
 ---
 
 # Make Bilibili Notes
@@ -76,7 +76,7 @@ configured.
 An empty anonymous subtitle response does not prove that a video has no official
 or AI subtitle track. Before choosing OCR or ASR, retry after `auth-check` reports
 the saved or temporary Bilibili cookie as ready; otherwise record the
-authentication limitation in the note.
+authentication limitation in the separate processing log.
 
 ## Workflow
 
@@ -108,8 +108,9 @@ python3 "$SKILL_DIR/scripts/bili_video.py" prepare \
 
 The URL's `?p=N` selects that part automatically; an explicit `--page N`
 overrides it. Use `--ignore-official-subtitle` only after this bounded QA proves a
-content mismatch. Record the rejected track and fallback in the note's method
-log; it is not permission to prefer ASR over a usable higher-priority subtitle.
+content mismatch. Record the rejected track and fallback in the separate
+processing log; it is not permission to prefer ASR over a usable higher-priority
+subtitle.
 
 The probe decision is binary: do the sampled frames repeatedly show sentence-like
 captions synchronized with speech? Ignore slide headings, logos, watermarks, and
@@ -187,9 +188,9 @@ After automatic detection, inspect `manifest.json` and listen to the opening
 audio. Slide text is only a clue because slides and narration may use different
 languages. If the language is already known, pass `--language zh` or
 `--language en` to skip detection. For code-switched audio, choose the dominant
-spoken language and record the limitation in the method log. Build the glossary
-after this check; Qwen receives it as context and Faster Whisper as its initial
-prompt.
+spoken language and record the limitation in the separate processing log. Build
+the glossary after this check; Qwen receives it as context and Faster Whisper as
+its initial prompt.
 
 The command reuses a named active session, installs only the packages required by
 an explicit language (or both sets for `auto`), uploads only the audio and a
@@ -239,7 +240,8 @@ Before summarizing:
 2. Cross-check at least the opening, one middle section, and the ending.
 3. Correct proper nouns, quantities, units, negations, and conclusion wording.
 4. Keep uncertainty explicit. Do not silently turn OCR/ASR guesses into facts.
-5. Only then structure and compress the transcript.
+5. Only then derive the summary and timeline, and turn the whole transcript into
+   the complete polished note.
 
 For a transcript too large to review in one pass, process chronological chunks
 with overlapping boundary context. Preserve each chunk's timestamps, then merge
@@ -249,8 +251,25 @@ chunks have been reviewed.
 ### 4. Write the Obsidian note
 
 Read [references/note-spec.md](references/note-spec.md) and follow its YAML,
-timeline, distinction between video claims and external additions, English tags,
-and method-log requirements.
+timeline, complete-note section, distinction between video claims and external
+additions, English tags, and separate processing-log requirements.
+
+The `完整笔记` section comes immediately after `时间线`. It is not another
+summary: rewrite the entire transcript in chronological, readable prose while
+preserving every substantive claim, example, condition, transition, caveat, and
+conclusion. Remove only semantically empty fillers, stutters, false starts, and
+exact repetitions. Repair punctuation, paragraph boundaries, and obvious
+references, but do not shorten the argument or add claims that were not spoken.
+For non-Chinese audio, produce a faithful Chinese rendering and retain important
+technical terms in the source language on first use. If the transcript is
+partial, say so explicitly instead of presenting the section as complete.
+
+Do not put processing history in the final note. Maintain one
+`processing.log` beside the notes in the output directory and append one
+dated entry per video or part. Record the source path, engine/model, QA samples,
+authentication limitations, external upload, failures, fallbacks, and unresolved
+transcription uncertainty there. Keep reader-facing content limitations in
+`局限与待核实项`; keep implementation and extraction details only in the log.
 
 For slide/PPT-style videos, preserve a few stable, information-dense frames when
 they explain a relationship better than prose. Do not save decorative duplicates.
@@ -277,7 +296,7 @@ or the video's own citation is not independent validation.
 - Never manually recreate operations already provided by the script.
 - Never claim complete coverage when download, OCR, or ASR is partial.
 - Preserve timestamps and source type in the final note.
-- Report method failures and fallbacks in the note's method log.
+- Report method failures and fallbacks in the separate `processing.log`.
 - If a high-risk claim cannot be verified, label it `未核实`; do not fill gaps
   with plausible-sounding explanations.
 

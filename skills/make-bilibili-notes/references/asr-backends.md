@@ -91,7 +91,8 @@ colab --auth=oauth2 stop -s bili-asr
 - Cross-check the opening, a middle section, and the ending against audio/video.
 - Review proper nouns, numbers, units, negations, and conclusion wording.
 - Record requested/detected language, confidence, engine, model, GPU request,
-  VAD chunking, and unresolved errors in the method log.
+  VAD chunking, and unresolved errors in the separate `processing.log`, not
+  in the reader-facing note.
 
 If remote execution fails, report the Colab failure. Do not automatically start
 a potentially multi-hour CPU transcription without the user's knowledge.
