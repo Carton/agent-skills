@@ -249,6 +249,13 @@ class AsrRoutingTest(unittest.TestCase):
 
         self.assertEqual(args.language, "auto")
 
+    def test_worker_accepts_ipykernel_connection_file_argument(self) -> None:
+        args = asr_worker.parse_args(
+            ["-f", "/root/.local/share/jupyter/runtime/kernel-test.json"]
+        )
+
+        self.assertEqual(args.payload, asr_worker.DEFAULT_INPUT_PATH)
+
     def test_explicit_chinese_and_english_select_different_engines(self) -> None:
         self.assertEqual(bili_video.asr_engine_for_language("zh-CN"), "qwen3-asr")
         self.assertEqual(bili_video.asr_engine_for_language("yue"), "qwen3-asr")
@@ -405,6 +412,7 @@ class AsrRoutingTest(unittest.TestCase):
         self.assertEqual(result["model"], "large-v3")
         self.assertEqual(result["language"], "en")
 
+
     def test_transcribe_manifest_records_selected_engine_and_language(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -463,6 +471,58 @@ class AsrRoutingTest(unittest.TestCase):
         self.assertEqual(manifest["asr"]["engine"], "faster-whisper")
         self.assertEqual(manifest["asr"]["requested_language"], "en")
         self.assertEqual(manifest["asr"]["language_detection"], "explicit")
+
+
+class VideoPageAndSubtitleFallbackTest(unittest.TestCase):
+    def test_url_page_is_used_unless_explicitly_overridden(self) -> None:
+        url = "https://www.bilibili.com/video/BV1KE411E7sZ/?p=2"
+
+        self.assertEqual(bili_video.resolve_video_page(url, None), 2)
+        self.assertEqual(bili_video.resolve_video_page(url, 1), 1)
+
+    def test_rejected_unrelated_subtitle_continues_to_media(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory)
+
+            def fake_probe(_: argparse.Namespace) -> None:
+                bili_video.write_json(
+                    output / "manifest.json",
+                    {
+                        "metadata": {"cid": 158593206},
+                        "source_type": "official_subtitle",
+                        "next_action": "use_transcript",
+                        "selected_subtitle": {
+                            "language": "ai-zh",
+                            "segment_count": 590,
+                        },
+                    },
+                )
+
+            args = argparse.Namespace(
+                url="https://www.bilibili.com/video/BV1KE411E7sZ/?p=2",
+                page=None,
+                output=str(output),
+                ignore_official_subtitle=True,
+            )
+            with (
+                mock.patch.object(bili_video, "command_probe", side_effect=fake_probe),
+                mock.patch.object(bili_video.shutil, "which", return_value="/bin/tool"),
+                mock.patch.object(
+                    bili_video,
+                    "fresh_playurl",
+                    side_effect=bili_video.PipelineError("media download started"),
+                ),
+                self.assertRaisesRegex(bili_video.PipelineError, "media download started"),
+            ):
+                bili_video.command_prepare(args)
+
+            manifest = bili_video.read_json(output / "manifest.json")
+
+        self.assertEqual(manifest["source_type"], "undetermined")
+        self.assertEqual(
+            manifest["rejected_official_subtitle"]["reason"],
+            "manual_qa_content_mismatch",
+        )
 
 
 if __name__ == "__main__":

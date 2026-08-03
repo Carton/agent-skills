@@ -186,6 +186,21 @@ def extract_bvid(value: str) -> str:
     return match.group(1)
 
 
+def resolve_video_page(value: str, explicit_page: int | None) -> int:
+    if explicit_page is not None:
+        return explicit_page
+    page_values = urllib.parse.parse_qs(urllib.parse.urlparse(value).query).get("p")
+    if not page_values:
+        return 1
+    try:
+        page = int(page_values[0])
+    except ValueError as exc:
+        raise PipelineError(f"无效的分 P 参数：p={page_values[0]}") from exc
+    if page < 1:
+        raise PipelineError(f"分 P 必须大于等于 1：p={page}")
+    return page
+
+
 def request(
     url: str,
     *,
@@ -833,7 +848,8 @@ def command_probe(args: argparse.Namespace) -> None:
     bvid = extract_bvid(args.url)
     output_dir = Path(args.output).resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
-    _, metadata = video_metadata(bvid, args.page)
+    page = resolve_video_page(args.url, args.page)
+    _, metadata = video_metadata(bvid, page)
     player = player_data(metadata)
     subtitle_items = ((player.get("subtitle") or {}).get("subtitles") or [])
     selected = choose_subtitle(subtitle_items)
@@ -905,7 +921,16 @@ def command_prepare(args: argparse.Namespace) -> None:
     command_probe(probe_args)
     manifest = read_json(output_dir / "manifest.json")
     if manifest["source_type"] == "official_subtitle":
-        return
+        if not args.ignore_official_subtitle:
+            return
+        manifest["rejected_official_subtitle"] = {
+            **(manifest.get("selected_subtitle") or {}),
+            "reason": "manual_qa_content_mismatch",
+        }
+        manifest["source_type"] = "undetermined"
+        manifest["next_action"] = "prepare_media"
+        write_json(output_dir / "manifest.json", manifest)
+        say("已按人工 QA 结论拒绝错挂字幕，继续下载媒体。")
     missing_media_tools = [
         name for name in ("ffmpeg", "ffprobe") if not shutil.which(name)
     ]
@@ -2124,7 +2149,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     probe = subparsers.add_parser("probe", help="Fetch metadata and official subtitles.")
     probe.add_argument("url")
-    probe.add_argument("--page", type=int, default=1)
+    probe.add_argument("--page", type=int)
     probe.add_argument("--output", required=True)
 
     prepare = subparsers.add_parser(
@@ -2132,8 +2157,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="Probe, download compact media, make audio WAV and a visual probe sheet.",
     )
     prepare.add_argument("url")
-    prepare.add_argument("--page", type=int, default=1)
+    prepare.add_argument("--page", type=int)
     prepare.add_argument("--output", required=True)
+    prepare.add_argument(
+        "--ignore-official-subtitle",
+        action="store_true",
+        help=(
+            "Download media only after transcript QA proves that Bilibili attached "
+            "an unrelated subtitle track."
+        ),
+    )
 
     hardsub = subparsers.add_parser(
         "hardsub",

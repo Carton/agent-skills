@@ -96,6 +96,21 @@ Read `WORKDIR/next-action.json`. Do not improvise around it.
 - `inspect_probe_for_hard_subtitles`: visually inspect only
   `WORKDIR/probe-contact.jpg`.
 
+Before accepting an official or AI subtitle, compare its opening lines with the
+opening audio/frames and the verified video title. If the content is clearly
+unrelated rather than merely imperfect, reject that corrupted upstream track and
+prepare the media explicitly:
+
+```bash
+python3 "$SKILL_DIR/scripts/bili_video.py" prepare \
+  "BILIBILI_URL" --output "WORKDIR" --ignore-official-subtitle
+```
+
+The URL's `?p=N` selects that part automatically; an explicit `--page N`
+overrides it. Use `--ignore-official-subtitle` only after this bounded QA proves a
+content mismatch. Record the rejected track and fallback in the note's method
+log; it is not permission to prefer ASR over a usable higher-priority subtitle.
+
 The probe decision is binary: do the sampled frames repeatedly show sentence-like
 captions synchronized with speech? Ignore slide headings, logos, watermarks, and
 occasional on-screen labels.

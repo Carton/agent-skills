@@ -256,10 +256,15 @@ def transcribe_qwen(
     return rows, len(vad_segments)
 
 
-def parse_args() -> argparse.Namespace:
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--payload", type=Path, default=DEFAULT_INPUT_PATH)
-    return parser.parse_args()
+    parser.add_argument(
+        "-f",
+        dest="_kernel_connection_file",
+        help=argparse.SUPPRESS,
+    )
+    return parser.parse_args(argv)
 
 
 def main() -> None:
