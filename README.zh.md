@@ -59,22 +59,49 @@ Claude 会自动加载并使用相应的技能。
 
 ## 可用技能
 
-### 🎮 游戏工具
+### 🎮 游戏库与商店工具
 
-#### epic-cli
+#### [epic-cli](skills/epic-cli/SKILL.md)
 
-Epic Games 游戏库管理 CLI 工具。使用 Legendary 从终端浏览、安装、启动、同步存档和管理你的 Epic Games 游戏库。
+使用 Legendary 在终端中管理 Epic Games 游戏库。
 
-**使用场景：** 管理 Epic Games、安装游戏、同步云存档或浏览 Epic 游戏收藏时。
+**使用场景：** 浏览已拥有的 Epic 游戏、安装或启动游戏、检查更新，或同步云存档。
 
-**功能特性：**
-- 列出和浏览 Epic Games 游戏库
-- 安装和启动游戏
-- 同步云存档
-- 检查更新
-- 跨平台支持（Linux、macOS、Windows）
+#### [steam-cli](skills/steam-cli/SKILL.md)
 
-**文档：** 详细用法请参阅 [skills/epic-cli/SKILL.md](skills/epic-cli/SKILL.md)
+管理自己拥有的 Steam 游戏库、查询 Steam 商店信息，并估算安装所需磁盘空间。
+
+**使用场景：** 查找未玩游戏、查看游玩时长、导出已拥有游戏列表、查询商店详情或区域价格，或确认游戏所需磁盘空间。
+
+### 📱 Android 诊断
+
+#### [android-logcat-analyzer](skills/android-logcat-analyzer/SKILL.md)
+
+分析 Android logcat 日志，定位崩溃、ANR、内存和性能问题。
+
+**使用场景：** Android 应用崩溃、出现 ANR、被系统意外杀死、发生内存泄漏，或存在卡顿和掉帧时。
+
+### 🔧 开发工作流
+
+#### [commit-message](skills/commit-message/SKILL.md)
+
+基于实际 Git diff 生成准确的 Conventional Commit 提交信息。
+
+**使用场景：** 编写或审查提交标题与正文，或准备 squash 合并提交信息时。
+
+#### [reverse-to-readable-c](skills/reverse-to-readable-c/SKILL.md)
+
+通过分阶段的逆向工程流程，将原生 PE 或 ELF 二进制文件整理为可维护的 C 源码树。
+
+**使用场景：** 探索二进制文件、分类函数、反编译模块、重命名符号，或将反编译输出清理为可读 C 代码时。
+
+### 📝 内容归档
+
+#### [make-bilibili-notes](skills/make-bilibili-notes/SKILL.md)
+
+将 Bilibili 视频转为带时间戳、可追溯的 Obsidian Markdown 笔记。
+
+**使用场景：** 总结、转录、事实核查或归档 Bilibili 视频时；流程会依次优先使用官方字幕、硬字幕 OCR 和音频转录。
 
 ## 开发
 

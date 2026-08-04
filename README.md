@@ -59,22 +59,49 @@ Claude will automatically load and use the appropriate skill.
 
 ## Available Skills
 
-### 🎮 Gaming Tools
+### 🎮 Game libraries and store tools
 
-#### epic-cli
+#### [epic-cli](skills/epic-cli/SKILL.md)
 
-Epic Games library management CLI tool. Browse, install, launch, sync saves, and manage your Epic Games library from the terminal using Legendary.
+Manage an Epic Games library from the terminal with Legendary.
 
-**Use when:** You want to manage Epic Games, install games, sync cloud saves, or browse your Epic collection.
+**Use when:** Browsing owned Epic games, installing or launching a title, checking updates, or syncing cloud saves.
 
-**Features:**
-- List and browse your Epic Games library
-- Install and launch games
-- Sync cloud saves
-- Check for updates
-- Cross-platform support (Linux, macOS, Windows)
+#### [steam-cli](skills/steam-cli/SKILL.md)
 
-**Documentation:** See [skills/epic-cli/SKILL.md](skills/epic-cli/SKILL.md) for detailed usage.
+Work with a self-owned Steam library, Steam store data, and installation-size estimates.
+
+**Use when:** Finding unplayed games, checking playtime, exporting an owned-game list, researching store details or regional prices, or checking the disk space a game needs.
+
+### 📱 Android diagnostics
+
+#### [android-logcat-analyzer](skills/android-logcat-analyzer/SKILL.md)
+
+Analyze Android logcat output to identify crashes, ANRs, memory issues, and performance problems.
+
+**Use when:** An Android app crashes, freezes with an ANR, is killed unexpectedly, leaks memory, or suffers from stutter or lag.
+
+### 🔧 Development workflow
+
+#### [commit-message](skills/commit-message/SKILL.md)
+
+Create accurate Conventional Commit messages from the actual Git diff.
+
+**Use when:** Writing or reviewing a commit subject and body, or preparing a squash commit message.
+
+#### [reverse-to-readable-c](skills/reverse-to-readable-c/SKILL.md)
+
+Turn a native PE or ELF binary into an organized, maintainable C source tree through a phased reverse-engineering workflow.
+
+**Use when:** Exploring a binary, classifying functions, decompiling modules, renaming symbols, or cleaning decompiler output into readable C.
+
+### 📝 Content archiving
+
+#### [make-bilibili-notes](skills/make-bilibili-notes/SKILL.md)
+
+Convert a Bilibili video into a timestamped, traceable Obsidian Markdown note.
+
+**Use when:** Summarizing, transcribing, fact-checking, or archiving a Bilibili video; the workflow prioritizes official subtitles, then hard-subtitle OCR, then audio transcription.
 
 ## Development
 
