@@ -1,6 +1,6 @@
 ---
 name: codex-delegate
-description: Delegate hard engineering — architecture design and difficult code modifications — to the local Codex CLI running a strong model (pinned at the top of this skill; currently gpt-6-astra at low reasoning effort), while ZCode keeps doing the light work (codebase research, log analysis, orchestration, verification) and feeds codex only pre-distilled context to save strong-model tokens. Supports resuming previous codex sessions for follow-ups. OPT-IN ONLY. Enable when the user explicitly invokes this skill or asks for this split (e.g. "/codex-delegate", "delegate to codex", "交给 codex 做", "难的部分用 codex"). Never trigger automatically; once the user opts in, keep it active for the rest of the task until they say otherwise.
+description: Delegate hard engineering — architecture design and difficult code modifications — to the local Codex CLI running a strong model (pinned at the top of this skill; currently gpt-6-astra at low reasoning effort), while the calling agent keeps doing the light work (codebase research, log analysis, orchestration, verification) and feeds codex only pre-distilled context to save strong-model tokens. Supports resuming previous codex sessions for follow-ups. OPT-IN ONLY. Enable when the user explicitly invokes this skill or asks for this split (e.g. "/codex-delegate", "delegate to codex", "交给 codex 做", "难的部分用 codex"). Never trigger automatically; once the user opts in, keep it active for the rest of the task until they say otherwise.
 ---
 
 # Codex Delegate (strong model, low effort)
@@ -15,16 +15,16 @@ EFFORT="low"          # reasoning effort: low | medium | high
 
 Once the user has opted in, split the work:
 
-- **ZCode (this agent) does the light work**: investigating the codebase, grepping/reading files, analyzing logs and tool output, reproducing issues, running commands/tests, git operations, and distilling the brief for each codex call. Also verifies codex's output after every call.
+- **You (the calling agent) do the light work**: investigating the codebase, grepping/reading files, analyzing logs and tool output, reproducing issues, running commands/tests, git operations, and distilling the brief for each codex call. Also verify codex's output after every call.
 - **Codex (the strong model) does the heavy work**: every important architecture design and every difficult code modification — new module/system design, cross-file refactors, concurrency/async correctness, performance-critical paths, tricky algorithms, subtle bug fixes.
 
 Simple mechanical edits (typos, renames, small localized fixes, config tweaks) do NOT go to codex — just do them. When genuinely unsure whether a change is "hard", delegate.
 
 ## Token economy: keep codex's context clean
 
-Every token the strong model reads is the expensive kind — don't make it do Zcode's job.
+Every token the strong model reads is the expensive kind — don't make it do the orchestrator's job.
 
-- **Distill, never dump.** ZCode runs the greps, reads the files, and analyzes the logs/tool output locally; the brief contains only conclusions plus the load-bearing evidence: exact file paths, code excerpts limited to the change sites (not whole files), and the few log lines that matter (not raw dumps).
+- **Distill, never dump.** Run the greps, read the files, and analyze the logs/tool output locally; the brief contains only conclusions plus the load-bearing evidence: exact file paths, code excerpts limited to the change sites (not whole files), and the few log lines that matter (not raw dumps).
 - **Make the brief self-sufficient** and say so: "All context you need is in this brief; do not explore the repo unless something essential is missing." Codex answering from the brief spends hundreds of tokens; codex exploring spends tens of thousands.
 - **Repo exploration by codex is the exception**, not the default — only for genuinely repo-wide design questions, and then bound it: "explore only <dirs/files> and nothing else".
 - **Trim between calls.** Don't re-paste context codex already has (see session reuse below) — send only the delta.
@@ -45,7 +45,7 @@ Capture the thread id of every fresh/forked call from the first `--json` event: 
 printf '%s\t%s\t%s\t%s\n' "$TID" "$(date '+%F %T')" "$PWD" "one-line scope: what this thread covers" >> /tmp/codex_delegate_ledger.tsv
 ```
 
-Per call, ZCode decides (check the ledger first — it can make this judgment):
+Per call, you decide (check the ledger first — it can make this judgment):
 
 - **Resume** when the new ask continues an existing thread's work: iterating on the same design, follow-up fixes to codex's own change, the next step of the same refactor. The prompt contains only the delta requirements plus any NEW findings — no re-stated context.
 - **Fork** when you want the old thread's context but must keep it pristine — e.g. "try a different approach" — then record the new thread id.
@@ -111,4 +111,4 @@ codex exec resume "$TID" -m "$MODEL" -c model_reasoning_effort="$EFFORT" -c sand
 ## Notes
 
 - Low reasoning effort is intentional: the strong model at low is still the strong model, and low keeps iteration fast. Raise to `-c model_reasoning_effort=medium` only if the user asks.
-- ZCode stays the orchestrator and owns final quality: it decides what to delegate and whether to resume, writes the briefs, and gates every merge of codex's work.
+- You stay the orchestrator and own final quality: you decide what to delegate and whether to resume, write the briefs, and gate every merge of codex's work.
