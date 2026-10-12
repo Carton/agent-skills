@@ -17,6 +17,15 @@ The workflow is phase-based and aggressively context-limited. Never try to load 
 which r2 file python3 && r2 -v | head -1
 ```
 
+**Recommended**: also check the top decompiler engine (REA/Ghidra). Without
+it the skill still works via r2ghidra, with lower output quality:
+
+```bash
+which rea && rea --version          # rea-agents CLI on PATH
+echo $GHIDRA_INSTALL_DIR            # must point at a Ghidra 12.1.x install
+rea doctor --client codex 2>&1 | grep -A2 '"id: ghidra"'   # configured+available
+```
+
 For full installation details, see [references/install-linux.md](references/install-linux.md).
 
 ---
@@ -320,14 +329,55 @@ Prefer `r2ghidra` through radare2 when available:
 scripts/decompile.sh ./target_binary fcn.1400010a0 fcn.1400020b0
 ```
 
-### Evidence Headers & Analysis Cache
+### Evidence Headers, Engine Ladder & Analysis Cache
 
-Every `phase2/` output starts with an `/* @evidence */` header recording the binary path, its SHA-256, the r2 engine version, and the decompiler **method** used (`pdg` = r2ghidra, `pdc` = fallback pseudo-disassembly). Read it before cleaning:
+`scripts/decompile.py` uses a per-function engine ladder — the first level
+that produces output wins:
 
-- `method: pdc` means the Ghidra decompiler failed on that function; treat the body as pseudo-disassembly and verify control flow against `pdf` (the cleanup rules injected by `generate-subagent-prompt.sh` cover this).
-- `verify_cleanup.sh` re-checks the recorded digest against the current binary and fails on a mismatch — stale decompiles must be regenerated, not cleaned.
+1. **ghidra** — full Ghidra (12.1.x) driven through one shared REA
+   (`rea-agents`) MCP session per batch. Best correctness: recovers call
+   varargs, rotated-loop counters, string arguments and stripped-binary
+   internals that r2ghidra frequently drops or crashes on.
+2. **pdg** — r2ghidra through radare2.
+3. **pdc** — radare2 built-in pseudo-disassembly (last resort).
 
-Analysis results are cached in an r2 project named `r2c_<sha8>` after the first batch, so subsequent `decompile.sh` calls skip `aaa`. The cache keys on the binary digest, so a changed binary invalidates it automatically. Set `R2C_NO_PROJECT_CACHE=1` to disable.
+Every `phase2/` output starts with an `/* @evidence */` header recording the
+binary path, its SHA-256, the engine that produced it, and the **method**
+level used. Read it before cleaning:
+
+- `method: ghidra` — highest-fidelity pseudocode; still verify suspicious
+  constructs per the cleanup rules, but decompiler-defect repairs are rare.
+- `method: pdg` — treat dropped varargs / lost counter increments as likely
+  (rule 9 of the cleanup prompt covers this).
+- `method: pdc` — the Ghidra decompilers failed on this function; this is
+  pseudo-disassembly. Verify every control-flow construct against `pdf`.
+- `verify_cleanup.sh` re-checks the recorded digest against the current binary
+  and fails on a mismatch — stale decompiles must be regenerated, not cleaned.
+
+Environment switches: `R2C_DECOMPILER=ghidra|pdg|pdc` pins one level (no
+fallback when pinned); `R2C_NO_REA=1` disables the Ghidra level entirely;
+`R2C_DEBUG=1` prints per-function engine resolution details.
+
+Ghidra-level adaptation notes (learned the hard way, handled automatically by
+`decompile.py` but useful when driving REA manually):
+
+- One MCP session per batch, not one process per function — each `rea`
+  process pays a ~10–20s JVM + Ghidra framework startup; within a session the
+  first tool call triggers the (lazy) auto-analysis and later decompiles take
+  well under a second.
+- Pipeline tokens are r2 names (`sym.x`, `dbg.x`, `fcn.00001234`). Ghidra only
+  knows plain exported symbols, so `sym.`/`dbg.` prefixes are stripped for
+  name lookup; anonymous `fcn.*` (and stripped binaries with no exports at
+  all) are translated by a load-base delta, derived either from a shared
+  exported symbol or by matching section addresses between the two loaders
+  (Ghidra typically loads PIE/DSO images at +0x100000 relative to r2).
+- A few very large functions (9KB+) still defeat the Ghidra decompiler itself;
+  the ladder routes them to pdg/pdc automatically.
+
+Analysis results for the radare2 levels are cached in an r2 project named
+`r2c_<sha8>` after the first batch, so subsequent `decompile.sh` calls skip
+`aaa`. The cache keys on the binary digest, so a changed binary invalidates it
+automatically. Set `R2C_NO_PROJECT_CACHE=1` to disable.
 
 ### Handling ANSI Color Codes
 
