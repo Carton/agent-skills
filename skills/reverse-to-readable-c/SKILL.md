@@ -57,6 +57,7 @@ You MUST NOT proceed to the next phase until:
 - [ ] `phase1/function_classification.md` exists
 - [ ] `clean/raw/` and `clean/src/` have identical structure
 - [ ] `scripts/verify_cleanup.sh` exists and passes
+- [ ] Raw files carry `@evidence` headers matching the current binary digest (no STALE failures)
 - [ ] `docs/project_summary.md` exists
 - [ ] All files in `clean/src/` are cleaned (verified by script)
 
@@ -318,6 +319,15 @@ Prefer `r2ghidra` through radare2 when available:
 # Decompile one or more functions
 scripts/decompile.sh ./target_binary fcn.1400010a0 fcn.1400020b0
 ```
+
+### Evidence Headers & Analysis Cache
+
+Every `phase2/` output starts with an `/* @evidence */` header recording the binary path, its SHA-256, the r2 engine version, and the decompiler **method** used (`pdg` = r2ghidra, `pdc` = fallback pseudo-disassembly). Read it before cleaning:
+
+- `method: pdc` means the Ghidra decompiler failed on that function; treat the body as pseudo-disassembly and verify control flow against `pdf` (the cleanup rules injected by `generate-subagent-prompt.sh` cover this).
+- `verify_cleanup.sh` re-checks the recorded digest against the current binary and fails on a mismatch — stale decompiles must be regenerated, not cleaned.
+
+Analysis results are cached in an r2 project named `r2c_<sha8>` after the first batch, so subsequent `decompile.sh` calls skip `aaa`. The cache keys on the binary digest, so a changed binary invalidates it automatically. Set `R2C_NO_PROJECT_CACHE=1` to disable.
 
 ### Handling ANSI Color Codes
 

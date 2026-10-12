@@ -28,8 +28,11 @@ ORIG=$(basename "$SAMPLE_FILE" | sed 's/^func_//; s/\.c$//')
 echo "  Testing with function: $ORIG"
 
 # 2. Modify mapping.tsv to "clean" this specific function
-# We use a more robust sed to match the exact line
-sed -i "s/$ORIG\t\[TODO\]\t\[TODO\]/$ORIG\ttest_func\tcore/" mapping.tsv
+# Rewrite the whole row regardless of its current clean_name/module
+# (the step-8.5 auto-classifier may already have filled them in)
+ADDR=$(awk -F'\t' -v f="$ORIG" '$2==f {print $1}' mapping.tsv)
+awk -i inplace -F'\t' -v OFS='\t' -v addr="$ADDR" \
+    '$1==addr { $3="test_func"; $4="core" } 1' mapping.tsv
 
 # 3. Run apply-mapping.sh
 "$SKILL_ROOT/scripts/apply-mapping.sh"

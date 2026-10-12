@@ -30,7 +30,11 @@ fi
 echo "  Testing with function: $ORIG (Address: $ADDR)"
 
 # 2. Modify mapping.tsv to "clean" this specific function
-sed -i "s/$ORIG\t\[TODO\]\t\[TODO\]/$ORIG\ttest_comment\tcore/" mapping.tsv
+# Rewrite the whole row regardless of its current clean_name/module
+# (the step-8.5 auto-classifier may already have filled them in)
+ADDR=$(awk -F'\t' -v f="$ORIG" '$2==f {print $1}' mapping.tsv)
+awk -i inplace -F'\t' -v OFS='\t' -v addr="$ADDR" \
+    '$1==addr { $3="test_comment"; $4="core" } 1' mapping.tsv
 
 # 3. Ensure the mapped file exists in clean/src/
 "$SKILL_ROOT/scripts/apply-mapping.sh" > /dev/null

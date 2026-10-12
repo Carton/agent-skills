@@ -299,6 +299,26 @@ else
     echo "[⚠️]  Triage script not found, skipping library/runtime triage"
 fi
 
+# 8.7. Auto-decompile likely root functions into phase2/
+echo "8.7: Auto-decompiling likely root functions into phase2/..."
+if [ -f "$SCRIPT_DIR/decompile.py" ]; then
+    # Heuristic: the 5 largest non-import, non-runtime functions are the
+    # most likely application root functions worth seeding phase2/ with.
+    ROOT_FUNCS=$(grep -v 'sym\.imp\.' "$OUTPUT_DIR/all_functions.txt" \
+        | grep -vE '(entry|_start|__libc_csu|__do_global|deregister_tm_clones|register_tm_clones|frame_dummy)' \
+        | awk '$3 >= 100 {print $4, $3}' | sort -k2 -rn | head -5 \
+        | awk '{print $1}')
+    if [ -n "$ROOT_FUNCS" ]; then
+        # shellcheck disable=SC2086
+        python3 "$SCRIPT_DIR/decompile.py" "$TARGET" $ROOT_FUNCS || \
+            echo "Warning: auto-decompile reported errors; run scripts/decompile.sh manually."
+    else
+        echo "No candidate functions found for auto-decompile."
+    fi
+else
+    echo "Warning: decompile.py not found; skipping auto-decompile."
+fi
+
 # 9. Generate Workspace Skeletons
 echo "9/10: Generating workspace skeletons (progress.md, global_map.md)..."
 
