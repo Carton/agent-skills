@@ -13,6 +13,7 @@ echo "=== Running All Skill Tests ==="
 ./tests/test_verify_cleanup.sh
 ./tests/test_add_comments.sh
 ./tests/test_literal_diff.sh
+"${R2C_PYTHON:-python3}" -m unittest discover -s tests -p 'test_*.py'
 
 echo ""
 echo "✨ ALL TESTS PASSED ✨"

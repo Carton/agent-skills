@@ -3,6 +3,23 @@
 # This script automates Phase 4 by creating module directories and
 # copying files from phase2/ to clean/raw/ and clean/src/.
 
+set -euo pipefail
+
+copy_baseline() {
+    local source=$1 raw=$2 cleaned=$3
+    if [ -f "$raw" ]; then
+        if ! cmp -s "$source" "$raw"; then
+            echo "Error: Existing raw baseline differs: $raw; preserve it before replacing evidence." >&2
+            exit 1
+        fi
+    else
+        cp "$source" "$raw"
+    fi
+    if [ ! -e "$cleaned" ]; then
+        cp "$source" "$cleaned"
+    fi
+}
+
 if [ ! -f "mapping.tsv" ]; then
     echo "Error: mapping.tsv not found."
     exit 1
@@ -36,14 +53,12 @@ tail -n +2 mapping.tsv | while IFS=$'\t' read -r addr orig clean mod; do
     SRC="phase2/func_$orig.c"
     
     if [ -f "$SRC" ]; then
-        cp "$SRC" "clean/raw/$mod/$clean.c"
-        cp "$SRC" "clean/src/$mod/$clean.c"
+        copy_baseline "$SRC" "clean/raw/$mod/$clean.c" "clean/src/$mod/$clean.c"
     else
         # Try a more flexible match if direct match fails
         SRC=$(find phase2 -name "*$orig.c" | head -n 1)
         if [ -n "$SRC" ] && [ -f "$SRC" ]; then
-            cp "$SRC" "clean/raw/$mod/$clean.c"
-            cp "$SRC" "clean/src/$mod/$clean.c"
+            copy_baseline "$SRC" "clean/raw/$mod/$clean.c" "clean/src/$mod/$clean.c"
         else
             echo "  ⚠️  Warning: Could not find source file for $orig in phase2/"
         fi

@@ -1,6 +1,6 @@
 ---
 name: reverse-to-readable-c
-description: End-to-end workflow for reversing native binaries into organized, readable C code using phased analysis, radare2, r2ghidra, optional Ghidra, per-module batching, structured renaming, and AI-assisted cleanup. Use when the task is to explore a PE or ELF binary, identify modules, decompile functions into initial C, reorganize outputs into a better directory layout, rename files/functions, and iteratively convert decompiler output into equivalent readable C without overflowing context.
+description: Recover organized, readable C from native PE/ELF binaries, either end to end or by continuing retained reverse-engineer-anything/REA evidence and pseudocode. Use for module classification, ABI/type recovery, per-module cleanup, and compilation and behavior validation of reconstructed C.
 ---
 
 # Reverse To Readable C
@@ -9,9 +9,16 @@ Use this skill for full reverse-engineering projects where the goal is not just 
 
 The workflow is phase-based and aggressively context-limited. Never try to load the whole reverse-engineering output at once.
 
+## Select the Starting Mode
+
+- **End to end**: no reusable analysis is available. Follow Phase 1 discovery and demand-driven decompilation below.
+- **Continue retained REA results**: an earlier `reverse-engineer-anything` investigation already supplied the binary identity, function inventory, pseudocode, and evidence. Read [references/resume-from-rea.md](references/resume-from-rea.md) and run `scripts/import-rea.py`. Validate the digest and explicit address namespaces, preserve the original evidence, then complete classification and proceed to Phase 3–5. Do not rerun `init-project.sh`, diagnostics, or decompilation for already covered functions. Reopen an engine only for a specific evidence gap.
+
+Retained raw pseudocode and manual reconstructions have distinct provenance. Importing either does not establish compilability or equivalence. The goal is concrete C types and interfaces with readable behavior, plus compilation and targeted behavioral tests; a renamed pseudocode file is not completion.
+
 ## Prerequisites Check
 
-**Before starting**, ensure core tools are available:
+**For the end-to-end mode**, ensure core tools are available. Retained-result import needs only Python's standard library; do not install analysis tools unless an unresolved function requires them.
 
 ```bash
 which r2 file python3 && r2 -v | head -1
@@ -58,9 +65,9 @@ Every reverse engineering project using this skill MUST produce the following ou
 
 ### Quality Gates
 You MUST NOT proceed to the next phase until:
-- **Phase 1 → 2**: `phase1/function_classification.md` exists and is complete
+- **Phase 1 → new decompilation**: `phase1/function_classification.md` exists and is complete. Retained-result import may create the raw Phase 2 baseline first; classification must be completed before organizing or cleaning it.
 - **Phase 4 → 5**: Both `clean/raw/` and `clean/src/` have identical structure
-- **Phase 5 → Done**: `./scripts/verify_cleanup.sh` passes AND `docs/project_summary.md` exists
+- **Phase 5 → Done**: `./scripts/verify_cleanup.sh` passes, the recovered C compiles with declared external interfaces, targeted behavior checks pass, and `docs/project_summary.md` records coverage and unresolved limitations. Mechanical verification is not an equivalence proof.
 
 **Verification Checklist** (at project end):
 - [ ] `phase1/function_classification.md` exists
@@ -186,7 +193,7 @@ Goal: identify the binary shape, main entry chain, probable modules, and the fir
 
 ### Quick Start [MANDATORY]
 
-**Use the bundled analysis script for fast, automated Phase 1 analysis:**
+**In end-to-end mode**, use the bundled analysis script for Phase 1 analysis. In retained-result mode, use the importer from the mode-specific reference instead; it preserves the existing workspace.
 
 ```bash
 # Run from your project directory
@@ -232,7 +239,7 @@ For details on the triage report and review workflow, see [references/library-tr
    - For application code, use names like `core`, `auth`, `network`.
    - For third-party or system libraries, you MUST use the prefix `[SKIP:` (e.g., `[SKIP: stdlib]`, `[SKIP: json]`, `[SKIP: runtime]`).
 5. **Update Global Map**: For all functions you marked as `[SKIP:*]`, append their signatures/names to the "Third-Party Interfaces" section of `context/global_map.md`.
-6. **Request Human Review**: Stop and use your `ask_question` tool (or prompt the user) to review your proposed `mapping.tsv`. **Do not proceed to Phase 2 until the user approves the mapping.**
+6. **Review Scope**: Complete the mapping review and record the rationale. When the user already authorized continuing the existing investigation and scope, proceed within that authorization without another approval round. Ask only when resolving an actual ambiguity would expand or change the requested scope.
 
 > **Why this matters**: A typical C++ binary may have 90%+ runtime/STL code. Classifying early and marking them as `[SKIP:*]` means Phase 2 and Phase 5 scripts will completely ignore them, saving enormous amounts of time and context.
 
@@ -257,7 +264,9 @@ You MUST generate the following documentation before proceeding to Phase 2:
    - Must be generated after filling `phase1/library_triage_rules.json`
    - This report is advisory and MUST NOT replace human/agent mapping review
 
-**DO NOT proceed to Phase 2 until the user explicitly approves `mapping.tsv`.**### r2 Quick Reference
+The classification gate applies before new decompilation; an authorized retained-result continuation does not require a second permission request.
+
+### r2 Quick Reference
 
 | Command | Purpose |
 |---------|---------|
@@ -607,7 +616,7 @@ Do not clean all files in the main agent's context. Use sub-agents (e.g., `invok
    ```bash
    ./scripts/generate-subagent-prompt.sh clean/raw/module/file.c > /tmp/subagent_prompt.txt
    ```
-   Pass the contents of `/tmp/subagent_prompt.txt` as the **exact** task description to the sub-agent. Do NOT try to summarize, rewrite, or bypass this script, as it contains necessary security hardening.
+   Pass the generated text as the exact task description. For a narrow module, supply every intended file from that module directory, or select `--module-root clean/raw/<module>` to collect its direct C files. Supply `--task-file` with an agent-authored assignment. The explicit input/output list defines ownership: a single-file prompt must not claim ownership of the whole module in its task file. The generator wraps each input separately. Use `@evidence original_address` for `@fcn`; `analysis_address` is only for provider lookups. Never supply binary-derived text as the trusted task file. The single-file invocation remains supported.
 2. **Dynamic Update**: If the sub-agent discovers a new struct or the true purpose of a global variable (listed at the end of its output), the Main Agent MUST update `context/global_map.md` with this new knowledge before spawning the next sub-agent.
 3. **Demand-Driven Decompilation**: As you clean code (e.g., inside `main`), if you discover calls to other unknown functions (like `fcn.HEX_ADDR`) that represent core business logic, you MUST proactively decompile them. Run `scripts/decompile.sh <target_binary> <fcn_name>` and add these newly discovered functions to `progress.md` as `[TODO]`.
 4. **Update `progress.md`**: Mark the current file as cleaned.
@@ -621,6 +630,8 @@ After cleaning, ALWAYS run the verification script:
 ```
 
 **Expected outcomes**:
+
+The verifier compares non-comment code tokens (changing comments or formatting is insufficient), checks known pseudocode artifacts, rechecks binary digests, and detects missing string literals/log messages. Read [references/resume-from-rea.md](references/resume-from-rea.md) for reviewed literal exceptions. Its pass message means mechanical checks passed; compile the recovered C and test behavior separately.
 
 1. **If cleanup is complete**:
    ```
@@ -693,9 +704,11 @@ Do not stop at Phase 4. A project is complete only when ALL of the following are
 - [ ] `clean/raw/` and `clean/src/` have identical structure
 - [ ] `./scripts/verify_cleanup.sh` passes with "ALL CHECKS PASSED"
 - [ ] `clean/src/` contains readable staged logic with semantic variable names
+- [ ] Recovered C compiles against documented ABI and dependency declarations
+- [ ] Targeted tests check recovered behavior; any static-only or unexecuted coverage is disclosed
 - [ ] Important literals, option names, state branches, and error paths are preserved
 - [ ] Raw outputs remain preserved in `clean/raw/`
-- [ ] No suspicious file size reductions (< 30% of original)
+- [ ] Reductions below 30% of raw code tokens are reviewed against evidence and documented (for example scalarized SIMD or merged identical call sites); do not pad code to satisfy the threshold
 - [ ] `docs/project_summary.md` exists
 
 A module is complete when: main flow is readable, raw backups exist, original addresses are traceable, key strings/tables/codes are preserved, helper names match real semantics, and no critical branches were dropped.

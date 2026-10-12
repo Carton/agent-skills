@@ -1,0 +1,10 @@
+[project]
+name = "reverse-to-readable-c-tools"
+version = "0.1.0"
+requires-python = ">=3.10"
+
+[tool.poe]
+executor.type = "simple"
+
+[tool.poe.tasks]
+fix-full = { cmd = "python scripts/check-tools.py", use_exec = true }

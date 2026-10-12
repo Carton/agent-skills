@@ -56,9 +56,14 @@
 6. docs/project_summary.md
 
 ## Quality Assurance
-- All files verified by verify_cleanup.sh
-- No missing strings or logic
-- All original behavior preserved
+- Mechanical verification: command, result, address/digest coverage and any literal review exceptions
+- Compilation: compiler/architecture, declared ABI, external dependencies and actual result
+- Behavior checks: inputs/boundaries tested, mocks used, and actual result
+- Evidence review: suspicious reductions, merged branches, missing parameters and inferred types
+- Unverified behavior: unexecuted target paths, concurrency, invalid inputs and unresolved ABI differences
+
+Report only checks actually performed. A mechanical pass, successful build or
+stubbed dependency test does not establish complete original-binary equivalence.
 
 ## Conclusion
 [Summary of project completion]

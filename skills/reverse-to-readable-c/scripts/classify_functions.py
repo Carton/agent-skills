@@ -360,6 +360,7 @@ class ImprovedFunctionClassifier:
         # 写入新的 mapping
         with open(output_tsv, 'w') as f:
             f.write("address\toriginal_name\tclean_name\tmodule\n")
+            used_paths = set()
 
             for func_name, result in results.items():
                 if func_name in original_mapping:
@@ -371,7 +372,13 @@ class ImprovedFunctionClassifier:
                     else:
                         address = "0x00000000"
 
-                f.write(f"{address}\t{func_name}\t{result['clean_name']}\t{result['category']}\n")
+                clean_name = result['clean_name']
+                module = result['category']
+                if not module.startswith('[SKIP:'):
+                    if (module, clean_name) in used_paths:
+                        clean_name = f"{clean_name}_{address.removeprefix('0x')}"
+                    used_paths.add((module, clean_name))
+                f.write(f"{address}\t{func_name}\t{clean_name}\t{module}\n")
 
         print(f"\n✅ 新的 mapping 已保存到 {output_tsv}")
 
