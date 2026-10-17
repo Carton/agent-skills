@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Repository documentation (README, LICENSE)
 - GitHub Actions workflow for skill validation
 - `.claude-plugin/marketplace.json` for plugin marketplace support
+- `codex-image` skill — delegate image recognition/OCR to the local Codex CLI (gpt-6-luna, low effort) when the agent cannot see images natively
 
 ### Changed
 - Renamed `skill.md` to `SKILL.md` to follow standard conventions
